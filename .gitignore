@@ -1,0 +1,39 @@
+# TypeScript engine
+engine/node_modules/
+engine/dist/
+engine/maps/db/
+engine/*.js.map
+
+# Django ops platform
+ops-platform/venv/
+ops-platform/db.sqlite3
+ops-platform/__pycache__/
+ops-platform/**/__pycache__/
+ops-platform/*.pyc
+ops-platform/**/*.pyc
+ops-platform/staticfiles/
+ops-platform/media/
+
+# Environment files — never commit secrets
+.env
+.env.local
+.env.*.local
+engine/.env
+ops-platform/.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+engine/coverage/

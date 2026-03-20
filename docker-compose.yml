@@ -1,0 +1,125 @@
+version: '3.9'
+
+x-engine-env: &engine-env
+  env_file: .env
+  environment:
+    - NODE_ENV=production
+    - REDIS_URL=redis://redis:6379
+    - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-tenet_edi}
+
+services:
+  engine:
+    build:
+      context: ./engine
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+      - "4080:4080"
+    <<: *engine-env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker-inbound:
+    build:
+      context: ./engine
+      dockerfile: Dockerfile
+    command: node dist/queue/workers/inbound.js
+    <<: *engine-env
+    depends_on:
+      engine:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 4
+
+  worker-outbound:
+    build:
+      context: ./engine
+      dockerfile: Dockerfile
+    command: node dist/queue/workers/outbound.js
+    <<: *engine-env
+    depends_on:
+      engine:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  ops:
+    build:
+      context: ./ops-platform
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-tenet_edi}
+      - REDIS_URL=redis://redis:6379
+      - ENGINE_API_URL=http://engine:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120"
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-tenet_edi}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  sftp:
+    image: atmoz/sftp
+    ports:
+      - "2222:22"
+    volumes:
+      - sftp_inbound:/home/ediuser/inbound
+      - sftp_outbound:/home/ediuser/outbound
+      - sftp_archive:/home/ediuser/archive
+    command: ediuser:${SFTP_PASSWORD:-sftppass}:1001
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:
+  sftp_inbound:
+  sftp_outbound:
+  sftp_archive:
