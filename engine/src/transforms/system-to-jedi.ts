@@ -12,17 +12,21 @@ export function systemToJedi(systemJson: Record<string, unknown>, map: Transform
   const segOrder = new Set<string>();
 
   for (const mapping of map.mappings) {
-    const value = _.get(systemJson, mapping.systemPath);
+    const rawValue = _.get(systemJson, mapping.systemPath);
+    const value = rawValue !== undefined && rawValue !== null ? rawValue : mapping.default;
     if (value === undefined || value === null) continue;
 
-    // jediPath format: "b2.b2_element_01" — tag is the first path component uppercased
-    const parts = mapping.jediPath.split('.');
-    const tag = parts[0].toUpperCase();
-    const elementPart = parts[parts.length - 1];
-    const elementMatch = elementPart.match(/_element_(\d+)$/);
+    // jediPath formats supported:
+    //   "b2.b2_element_01"           — flat (legacy)
+    //   "heading.b1.b1_element_01"   — section-prefixed
+    // Tag is derived from the element key prefix (before _element_), not parts[0],
+    // so both formats produce the correct uppercase segment tag.
+    const elementPart = mapping.jediPath.split('.').at(-1)!;
+    const elementMatch = elementPart.match(/^(.+)_element_(\d+)$/);
     if (!elementMatch) continue;
 
-    const elementIndex = parseInt(elementMatch[1], 10);
+    const tag = elementMatch[1].toUpperCase();
+    const elementIndex = parseInt(elementMatch[2], 10);
 
     if (!segMap.has(tag)) {
       segMap.set(tag, new Map());

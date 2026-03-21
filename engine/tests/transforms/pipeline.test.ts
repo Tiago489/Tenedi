@@ -362,12 +362,13 @@ const OUTBOUND_MAP_990: TransformMap = {
   version: 1,
   publishedAt: new Date(),
   mappings: [
-    { jediPath: 'b1.b1_element_01', systemPath: 'response.scac' },
-    { jediPath: 'b1.b1_element_02', systemPath: 'response.shipmentId' },
-    { jediPath: 'b1.b1_element_03', systemPath: 'response.date' },
-    { jediPath: 'b1.b1_element_04', systemPath: 'response.actionCode' },
-    { jediPath: 'n9.n9_element_01', systemPath: 'reference.qualifier' },
-    { jediPath: 'n9.n9_element_02', systemPath: 'reference.number' },
+    // Matches the production seed exactly — heading-prefixed paths, order.* schema
+    { jediPath: 'heading.b1.b1_element_01', systemPath: 'order.SCAC' },
+    { jediPath: 'heading.b1.b1_element_02', systemPath: 'order.standardOrderFields.shipperBillOfLadingNumber' },
+    { jediPath: 'heading.b1.b1_element_03', systemPath: 'order.date' },
+    { jediPath: 'heading.b1.b1_element_04', systemPath: 'order.action' },
+    { jediPath: 'heading.n9.n9_element_01', systemPath: 'order.reference.qualifier', default: 'CN' },
+    { jediPath: 'heading.n9.n9_element_02', systemPath: 'order.id' },
   ],
 };
 
@@ -420,28 +421,44 @@ const OUTBOUND_MAP_210: TransformMap = {
 };
 
 describe('Outbound Pipeline — 990 systemToJedi', () => {
-  const systemJson = {
-    response: { scac: 'PAAF', shipmentId: '401783612', date: '20260321', actionCode: 'A' },
-    reference: { qualifier: 'CN', number: '401783612' },
+  // Sample order payload matching the order.* systemPath schema
+  const orderPayload = {
+    order: {
+      SCAC: 'PAAF',
+      standardOrderFields: { shipperBillOfLadingNumber: '401783612' },
+      date: '20260321',
+      action: 'A',
+      id: '401783612',
+      // reference.qualifier omitted — default 'CN' should fill it
+    },
   };
 
   let segments: RawSegment[];
-  beforeAll(() => { segments = systemToJedi(systemJson, OUTBOUND_MAP_990); });
+  beforeAll(() => { segments = systemToJedi(orderPayload, OUTBOUND_MAP_990); });
 
-  test('emits B1 segment with scac, shipmentId, date, actionCode', () => {
+  test('emits B1 with SCAC, BOL number, date, action code', () => {
     const b1 = segments.find(s => s.tag === 'B1');
     expect(b1).toBeDefined();
-    expect(b1!.elements[0]).toBe('PAAF');
-    expect(b1!.elements[1]).toBe('401783612');
-    expect(b1!.elements[2]).toBe('20260321');
-    expect(b1!.elements[3]).toBe('A');
+    expect(b1!.elements[0]).toBe('PAAF');        // B1_01 SCAC
+    expect(b1!.elements[1]).toBe('401783612');   // B1_02 BOL number
+    expect(b1!.elements[2]).toBe('20260321');    // B1_03 date
+    expect(b1!.elements[3]).toBe('A');           // B1_04 action code
   });
 
-  test('emits N9 segment with reference qualifier and number', () => {
+  test('emits N9 with default CN qualifier and order id', () => {
     const n9 = segments.find(s => s.tag === 'N9');
     expect(n9).toBeDefined();
-    expect(n9!.elements[0]).toBe('CN');
-    expect(n9!.elements[1]).toBe('401783612');
+    expect(n9!.elements[0]).toBe('CN');          // N9_01 qualifier (default)
+    expect(n9!.elements[1]).toBe('401783612');   // N9_02 order id
+  });
+
+  test('N9 qualifier uses explicit value when provided, not the default', () => {
+    const withQualifier = {
+      order: { ...orderPayload.order, reference: { qualifier: 'BM' } },
+    };
+    const result = systemToJedi(withQualifier, OUTBOUND_MAP_990);
+    const n9 = result.find(s => s.tag === 'N9');
+    expect(n9!.elements[0]).toBe('BM');
   });
 
   test('segment order is B1 then N9', () => {
@@ -449,12 +466,11 @@ describe('Outbound Pipeline — 990 systemToJedi', () => {
     expect(tags.indexOf('B1')).toBeLessThan(tags.indexOf('N9'));
   });
 
-  test('omits segments for missing systemJson fields', () => {
-    const partial = { response: { scac: 'GLFH', shipmentId: 'X1' } };
-    const result = systemToJedi(partial, OUTBOUND_MAP_990);
-    expect(result.find(s => s.tag === 'N9')).toBeUndefined();
-    const b1 = result.find(s => s.tag === 'B1');
-    expect(b1!.elements[0]).toBe('GLFH');
+  test('heading-prefixed jediPaths produce correct uppercase tags (not HEADING)', () => {
+    const tags = segments.map(s => s.tag);
+    expect(tags).not.toContain('HEADING');
+    expect(tags).toContain('B1');
+    expect(tags).toContain('N9');
   });
 });
 

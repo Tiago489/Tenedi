@@ -2,26 +2,32 @@ import { mapRegistry } from '../registry';
 
 // systemJson schema for outbound 990 (tender response we send):
 // {
-//   response: { scac, shipmentId, date, actionCode }  — B1 header
-//   reference: { qualifier, number }                  — N9 reference
+//   order: {
+//     SCAC:   string,                                    — B1_01
+//     standardOrderFields: { shipperBillOfLadingNumber } — B1_02
+//     date:   string (YYYYMMDD),                         — B1_03
+//     action: string (raw code — 'A'|'D'|'R'),           — B1_04
+//     id:     string,                                    — N9_02
+//     reference: { qualifier: 'CN' }                    — N9_01 (default CN)
+//   }
 // }
 //
-// NOTE: All paths are flat seg.seg_element_NN.
-// The current systemToJedi transform only supports flat segments.
-// N1 party loops are deferred until systemToJedi is extended.
+// Action code lookup ($lookup RESERVATION_ACTION_CODES) will be applied by
+// the DSL compiler at runtime once the DSL authoring interface is built.
+// The RESERVATION_ACTION_CODES reference table is seeded in Django (migration 0005).
 
 mapRegistry.publish({
   id: 'seed-990-outbound',
   transactionSet: '990',
   direction: 'outbound',
   mappings: [
-    // B1 — tender response header
-    { jediPath: 'b1.b1_element_01', systemPath: 'response.scac' },
-    { jediPath: 'b1.b1_element_02', systemPath: 'response.shipmentId' },
-    { jediPath: 'b1.b1_element_03', systemPath: 'response.date' },
-    { jediPath: 'b1.b1_element_04', systemPath: 'response.actionCode' },
-    // N9 — reference identification
-    { jediPath: 'n9.n9_element_01', systemPath: 'reference.qualifier' },
-    { jediPath: 'n9.n9_element_02', systemPath: 'reference.number' },
+    // B1 — Beginning segment
+    { jediPath: 'heading.b1.b1_element_01', systemPath: 'order.SCAC' },
+    { jediPath: 'heading.b1.b1_element_02', systemPath: 'order.standardOrderFields.shipperBillOfLadingNumber' },
+    { jediPath: 'heading.b1.b1_element_03', systemPath: 'order.date' },
+    { jediPath: 'heading.b1.b1_element_04', systemPath: 'order.action' },
+    // N9 — Reference identification (order ID with CN qualifier)
+    { jediPath: 'heading.n9.n9_element_01', systemPath: 'order.reference.qualifier', default: 'CN' },
+    { jediPath: 'heading.n9.n9_element_02', systemPath: 'order.id' },
   ],
 });
