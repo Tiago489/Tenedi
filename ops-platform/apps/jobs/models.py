@@ -22,6 +22,7 @@ class JobRecord(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='queued')
     payload_preview = models.TextField(blank=True)  # first 500 chars of raw EDI
     error_message = models.TextField(blank=True)
+    ai_narrative = models.TextField(blank=True)
     retry_count = models.PositiveSmallIntegerField(default=0)
     received_at = models.DateTimeField()
     processed_at = models.DateTimeField(null=True, blank=True)

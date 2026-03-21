@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib import messages
 from .models import JobRecord
 from services.engine_client import EngineClient
+from services.narrative import NarrativeService
 
 
 def requeue_jobs(modeladmin, request, queryset):
@@ -40,9 +41,36 @@ class JobRecordAdmin(admin.ModelAdmin):
     search_fields = ('job_id', 'error_message', 'transaction_set')
     readonly_fields = (
         'job_id', 'queue', 'source', 'transaction_set', 'trading_partner',
-        'payload_preview', 'received_at', 'processed_at',
+        'payload_preview', 'received_at', 'processed_at', 'ai_narrative',
     )
     actions = [requeue_jobs]
 
+    fieldsets = (
+        (None, {
+            'fields': (
+                'job_id', 'queue', 'source', 'transaction_set',
+                'trading_partner', 'status', 'retry_count',
+            ),
+        }),
+        ('AI Summary', {
+            'fields': ('ai_narrative',),
+            'classes': ('wide',),
+        }),
+        ('Detail', {
+            'fields': ('payload_preview', 'error_message', 'received_at', 'processed_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
     def has_add_permission(self, request):
         return False  # Jobs are created by the engine, not manually
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        obj = self.get_object(request, object_id)
+        if obj is not None and not obj.ai_narrative:
+            try:
+                obj.ai_narrative = NarrativeService().generate(obj)
+                obj.save(update_fields=['ai_narrative'])
+            except Exception as exc:
+                messages.warning(request, f'Could not generate AI narrative: {exc}')
+        return super().change_view(request, object_id, form_url, extra_context)
