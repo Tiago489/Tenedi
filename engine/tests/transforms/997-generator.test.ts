@@ -11,6 +11,20 @@ const SAMPLE_EDI = [
   'IEA*1*000000001',
 ].join('~\n') + '~';
 
+// Two transactions in one functional group
+const MULTI_TX_EDI = [
+  'ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *231015*1200*U*00401*000000001*0*P*>',
+  'GS*SM*SENDER*RECEIVER*20231015*1200*1*X*004010',
+  'ST*204*0001',
+  'B2**ABCD*PRO123**TL',
+  'SE*2*0001',
+  'ST*210*0002',
+  'B2**EFGH*PRO456**TL',
+  'SE*2*0002',
+  'GE*2*1',
+  'IEA*1*000000001',
+].join('~\n') + '~';
+
 describe('997 Generator', () => {
   test('generates valid 997 with GS functional identifier FA', () => {
     const parsed = parseEDI(SAMPLE_EDI);
@@ -66,5 +80,28 @@ describe('997 Generator', () => {
   test('SE segment present with segment count', () => {
     const parsed = parseEDI(SAMPLE_EDI);
     expect(generate997(parsed)).toContain('SE*');
+  });
+
+  // --- new tests ---
+
+  test('multi-transaction interchange generates one AK2/AK5 per transaction', () => {
+    const parsed = parseEDI(MULTI_TX_EDI);
+    const edi997 = generate997(parsed);
+
+    expect(edi997).toContain('AK2*204*0001');
+    expect(edi997).toContain('AK2*210*0002');
+
+    // Two AK5 segments — one per transaction
+    const ak5Matches = edi997.match(/AK5\*/g);
+    expect(ak5Matches).toHaveLength(2);
+  });
+
+  test('mixed accept/reject produces AK9*P (partial)', () => {
+    const parsed = parseEDI(MULTI_TX_EDI);
+    const edi997 = generate997(parsed, [
+      { transactionSetControlNumber: '0001', code: 'A' },
+      { transactionSetControlNumber: '0002', code: 'R' },
+    ]);
+    expect(edi997).toContain('AK9*P');
   });
 });

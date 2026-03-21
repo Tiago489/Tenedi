@@ -12,7 +12,7 @@ import { deliverToAPI } from '../../routing/router';
 
 const OPS_URL = process.env.OPS_PLATFORM_URL ?? 'http://localhost:8000';
 
-async function recordJobInOps(job: Job, txSet: string): Promise<void> {
+export async function recordJobInOps(job: Job, txSet: string): Promise<void> {
   try {
     await axios.post(`${OPS_URL}/api/jobs/`, {
       job_id: job.id,
