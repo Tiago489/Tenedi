@@ -1,6 +1,8 @@
 import { parseEDI } from '../../src/transforms/edi-parser';
 import { jediToSystem } from '../../src/transforms/jedi-to-system';
+import { systemToJedi } from '../../src/transforms/system-to-jedi';
 import type { TransformMap } from '../../src/types/maps';
+import type { RawSegment } from '../../src/types/jedi';
 
 const SAMPLE_204 = [
   'ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *231015*1200*U*00401*000000001*0*P*>',
@@ -346,5 +348,232 @@ describe('Pipeline — detail n1_loop structure (N1 after S5)', () => {
     const result = jediToSystem(tx, TEST_MAP_DETAIL_N1) as Record<string, unknown>;
     const order = (result as Record<string, Record<string, Record<string, unknown>>>).order;
     expect(order?.standardOrderFields?.shipperBillOfLadingNumber).toBe('BOL123');
+  });
+});
+
+// ─── Outbound: systemToJedi ──────────────────────────────────────────────────
+// These tests confirm that systemJson → systemToJedi → RawSegment[] produces
+// the correct segment tags and element positions for each outbound seed schema.
+
+const OUTBOUND_MAP_990: TransformMap = {
+  id: 'test-990-outbound',
+  transactionSet: '990',
+  direction: 'outbound',
+  version: 1,
+  publishedAt: new Date(),
+  mappings: [
+    { jediPath: 'b1.b1_element_01', systemPath: 'response.scac' },
+    { jediPath: 'b1.b1_element_02', systemPath: 'response.shipmentId' },
+    { jediPath: 'b1.b1_element_03', systemPath: 'response.date' },
+    { jediPath: 'b1.b1_element_04', systemPath: 'response.actionCode' },
+    { jediPath: 'n9.n9_element_01', systemPath: 'reference.qualifier' },
+    { jediPath: 'n9.n9_element_02', systemPath: 'reference.number' },
+  ],
+};
+
+const OUTBOUND_MAP_214: TransformMap = {
+  id: 'test-214-outbound',
+  transactionSet: '214',
+  direction: 'outbound',
+  version: 1,
+  publishedAt: new Date(),
+  mappings: [
+    { jediPath: 'b10.b10_element_01', systemPath: 'shipment.referenceNumber' },
+    { jediPath: 'b10.b10_element_02', systemPath: 'shipment.billOfLading' },
+    { jediPath: 'b10.b10_element_03', systemPath: 'shipment.scac' },
+    { jediPath: 'l11.l11_element_01', systemPath: 'reference.number' },
+    { jediPath: 'l11.l11_element_02', systemPath: 'reference.qualifier' },
+    { jediPath: 'at7.at7_element_01', systemPath: 'status.code' },
+    { jediPath: 'at7.at7_element_02', systemPath: 'status.reasonCode' },
+    { jediPath: 'at7.at7_element_05', systemPath: 'status.date' },
+    { jediPath: 'at7.at7_element_06', systemPath: 'status.time' },
+    { jediPath: 'ms1.ms1_element_01', systemPath: 'status.city' },
+    { jediPath: 'ms1.ms1_element_02', systemPath: 'status.state' },
+    { jediPath: 'at8.at8_element_01', systemPath: 'weight.qualifier' },
+    { jediPath: 'at8.at8_element_02', systemPath: 'weight.unit' },
+    { jediPath: 'at8.at8_element_03', systemPath: 'weight.value' },
+    { jediPath: 'at8.at8_element_04', systemPath: 'weight.pieces' },
+  ],
+};
+
+const OUTBOUND_MAP_210: TransformMap = {
+  id: 'test-210-outbound',
+  transactionSet: '210',
+  direction: 'outbound',
+  version: 1,
+  publishedAt: new Date(),
+  mappings: [
+    { jediPath: 'b3.b3_element_02', systemPath: 'invoice.invoiceNumber' },
+    { jediPath: 'b3.b3_element_03', systemPath: 'invoice.shipmentId' },
+    { jediPath: 'b3.b3_element_04', systemPath: 'invoice.paymentMethod' },
+    { jediPath: 'b3.b3_element_06', systemPath: 'invoice.invoiceDate' },
+    { jediPath: 'b3.b3_element_07', systemPath: 'invoice.totalCharges' },
+    { jediPath: 'b3.b3_element_09', systemPath: 'invoice.deliveryDate' },
+    { jediPath: 'b3.b3_element_11', systemPath: 'invoice.scac' },
+    { jediPath: 'c3.c3_element_01', systemPath: 'currency' },
+    { jediPath: 'n9.n9_element_01', systemPath: 'reference.qualifier' },
+    { jediPath: 'n9.n9_element_02', systemPath: 'reference.number' },
+    { jediPath: 'l3.l3_element_01', systemPath: 'totals.weight' },
+    { jediPath: 'l3.l3_element_02', systemPath: 'totals.weightQualifier' },
+    { jediPath: 'l3.l3_element_05', systemPath: 'totals.charges' },
+  ],
+};
+
+describe('Outbound Pipeline — 990 systemToJedi', () => {
+  const systemJson = {
+    response: { scac: 'PAAF', shipmentId: '401783612', date: '20260321', actionCode: 'A' },
+    reference: { qualifier: 'CN', number: '401783612' },
+  };
+
+  let segments: RawSegment[];
+  beforeAll(() => { segments = systemToJedi(systemJson, OUTBOUND_MAP_990); });
+
+  test('emits B1 segment with scac, shipmentId, date, actionCode', () => {
+    const b1 = segments.find(s => s.tag === 'B1');
+    expect(b1).toBeDefined();
+    expect(b1!.elements[0]).toBe('PAAF');
+    expect(b1!.elements[1]).toBe('401783612');
+    expect(b1!.elements[2]).toBe('20260321');
+    expect(b1!.elements[3]).toBe('A');
+  });
+
+  test('emits N9 segment with reference qualifier and number', () => {
+    const n9 = segments.find(s => s.tag === 'N9');
+    expect(n9).toBeDefined();
+    expect(n9!.elements[0]).toBe('CN');
+    expect(n9!.elements[1]).toBe('401783612');
+  });
+
+  test('segment order is B1 then N9', () => {
+    const tags = segments.map(s => s.tag);
+    expect(tags.indexOf('B1')).toBeLessThan(tags.indexOf('N9'));
+  });
+
+  test('omits segments for missing systemJson fields', () => {
+    const partial = { response: { scac: 'GLFH', shipmentId: 'X1' } };
+    const result = systemToJedi(partial, OUTBOUND_MAP_990);
+    expect(result.find(s => s.tag === 'N9')).toBeUndefined();
+    const b1 = result.find(s => s.tag === 'B1');
+    expect(b1!.elements[0]).toBe('GLFH');
+  });
+});
+
+describe('Outbound Pipeline — 214 systemToJedi', () => {
+  const systemJson = {
+    shipment: { referenceNumber: '4655745', billOfLading: 'S2601374963', scac: 'MPXE' },
+    reference: { qualifier: 'TN', number: 'S2601374963' },
+    status: { code: 'P1', reasonCode: 'NS', date: '20260321', time: '0814', city: 'LOS ANGELES', state: 'CA' },
+    weight: { qualifier: 'G', unit: 'L', value: '18', pieces: '1' },
+  };
+
+  let segments: RawSegment[];
+  beforeAll(() => { segments = systemToJedi(systemJson, OUTBOUND_MAP_214); });
+
+  test('emits B10 with referenceNumber, billOfLading, scac', () => {
+    const b10 = segments.find(s => s.tag === 'B10');
+    expect(b10).toBeDefined();
+    expect(b10!.elements[0]).toBe('4655745');
+    expect(b10!.elements[1]).toBe('S2601374963');
+    expect(b10!.elements[2]).toBe('MPXE');
+  });
+
+  test('emits L11 with number at element_01 and qualifier at element_02', () => {
+    const l11 = segments.find(s => s.tag === 'L11');
+    expect(l11).toBeDefined();
+    expect(l11!.elements[0]).toBe('S2601374963');
+    expect(l11!.elements[1]).toBe('TN');
+  });
+
+  test('emits AT7 with status code, reasonCode, date, time at correct positions', () => {
+    const at7 = segments.find(s => s.tag === 'AT7');
+    expect(at7).toBeDefined();
+    expect(at7!.elements[0]).toBe('P1');   // element_01
+    expect(at7!.elements[1]).toBe('NS');   // element_02
+    expect(at7!.elements[2]).toBe('');     // element_03 (empty)
+    expect(at7!.elements[3]).toBe('');     // element_04 (empty)
+    expect(at7!.elements[4]).toBe('20260321'); // element_05
+    expect(at7!.elements[5]).toBe('0814');     // element_06
+  });
+
+  test('emits MS1 with city and state', () => {
+    const ms1 = segments.find(s => s.tag === 'MS1');
+    expect(ms1).toBeDefined();
+    expect(ms1!.elements[0]).toBe('LOS ANGELES');
+    expect(ms1!.elements[1]).toBe('CA');
+  });
+
+  test('emits AT8 with weight qualifier, unit, value, pieces', () => {
+    const at8 = segments.find(s => s.tag === 'AT8');
+    expect(at8).toBeDefined();
+    expect(at8!.elements[0]).toBe('G');
+    expect(at8!.elements[1]).toBe('L');
+    expect(at8!.elements[2]).toBe('18');
+    expect(at8!.elements[3]).toBe('1');
+  });
+});
+
+describe('Outbound Pipeline — 210 systemToJedi', () => {
+  const systemJson = {
+    invoice: {
+      invoiceNumber: 'BTX001INV7',
+      shipmentId: 'GSO20008906',
+      paymentMethod: 'PP',
+      invoiceDate: '20260320',
+      totalCharges: '10990',
+      deliveryDate: '20260320',
+      scac: 'GVTT',
+    },
+    currency: 'USD',
+    reference: { qualifier: 'BM', number: 'GSO20008906' },
+    totals: { weight: '849', weightQualifier: 'G', charges: '10990' },
+  };
+
+  let segments: RawSegment[];
+  beforeAll(() => { segments = systemToJedi(systemJson, OUTBOUND_MAP_210); });
+
+  test('emits B3 with correct element positions (02–11)', () => {
+    const b3 = segments.find(s => s.tag === 'B3');
+    expect(b3).toBeDefined();
+    expect(b3!.elements[0]).toBe('');              // element_01 empty
+    expect(b3!.elements[1]).toBe('BTX001INV7');    // element_02 invoiceNumber
+    expect(b3!.elements[2]).toBe('GSO20008906');   // element_03 shipmentId
+    expect(b3!.elements[3]).toBe('PP');            // element_04 paymentMethod
+    expect(b3!.elements[4]).toBe('');              // element_05 empty
+    expect(b3!.elements[5]).toBe('20260320');      // element_06 invoiceDate
+    expect(b3!.elements[6]).toBe('10990');         // element_07 totalCharges
+    expect(b3!.elements[7]).toBe('');              // element_08 empty
+    expect(b3!.elements[8]).toBe('20260320');      // element_09 deliveryDate
+    expect(b3!.elements[9]).toBe('');              // element_10 empty
+    expect(b3!.elements[10]).toBe('GVTT');         // element_11 scac
+  });
+
+  test('emits C3 with currency code', () => {
+    const c3 = segments.find(s => s.tag === 'C3');
+    expect(c3).toBeDefined();
+    expect(c3!.elements[0]).toBe('USD');
+  });
+
+  test('emits N9 with BM qualifier and bill of lading number', () => {
+    const n9 = segments.find(s => s.tag === 'N9');
+    expect(n9).toBeDefined();
+    expect(n9!.elements[0]).toBe('BM');
+    expect(n9!.elements[1]).toBe('GSO20008906');
+  });
+
+  test('emits L3 with weight at element_01, qualifier at element_02, charges at element_05', () => {
+    const l3 = segments.find(s => s.tag === 'L3');
+    expect(l3).toBeDefined();
+    expect(l3!.elements[0]).toBe('849');           // element_01 weight
+    expect(l3!.elements[1]).toBe('G');             // element_02 weightQualifier
+    expect(l3!.elements[2]).toBe('');              // element_03 empty
+    expect(l3!.elements[3]).toBe('');              // element_04 empty
+    expect(l3!.elements[4]).toBe('10990');         // element_05 charges
+  });
+
+  test('segment insertion order: B3, C3, N9, L3', () => {
+    const tags = segments.map(s => s.tag);
+    expect(tags.indexOf('B3')).toBeLessThan(tags.indexOf('C3'));
+    expect(tags.indexOf('C3')).toBeLessThan(tags.indexOf('N9'));
+    expect(tags.indexOf('N9')).toBeLessThan(tags.indexOf('L3'));
   });
 });
