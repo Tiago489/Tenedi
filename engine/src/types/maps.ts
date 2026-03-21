@@ -28,4 +28,8 @@ export const TransformFunctions = {
   trim: (v: string) => v.trim(),
   cents: (v: string) => String(Math.round(parseFloat(v) * 100)),
   fromCents: (v: string) => (parseInt(v, 10) / 100).toFixed(2),
+  reservationActionCode: (v: string) => {
+    const codes: Record<string, string> = { 'ACCEPTED': 'A', 'CANCELED': 'D', 'DELETE': 'R' };
+    return codes[v] ?? v;
+  },
 } as const;

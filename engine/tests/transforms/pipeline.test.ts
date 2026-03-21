@@ -366,7 +366,7 @@ const OUTBOUND_MAP_990: TransformMap = {
     { jediPath: 'heading.b1.b1_element_01', systemPath: 'order.SCAC' },
     { jediPath: 'heading.b1.b1_element_02', systemPath: 'order.standardOrderFields.shipperBillOfLadingNumber' },
     { jediPath: 'heading.b1.b1_element_03', systemPath: 'order.date' },
-    { jediPath: 'heading.b1.b1_element_04', systemPath: 'order.action' },
+    { jediPath: 'heading.b1.b1_element_04', systemPath: 'order.action', transform: 'reservationActionCode' },
     { jediPath: 'heading.n9.n9_element_01', systemPath: 'order.reference.qualifier', default: 'CN' },
     { jediPath: 'heading.n9.n9_element_02', systemPath: 'order.id' },
   ],
@@ -421,13 +421,15 @@ const OUTBOUND_MAP_210: TransformMap = {
 };
 
 describe('Outbound Pipeline — 990 systemToJedi', () => {
-  // Sample order payload matching the order.* systemPath schema
+  // Sample order payload matching the order.* systemPath schema.
+  // action is passed as the human-readable label; reservationActionCode
+  // transform must map it to the X12 code before it reaches the segment.
   const orderPayload = {
     order: {
       SCAC: 'PAAF',
       standardOrderFields: { shipperBillOfLadingNumber: '401783612' },
       date: '20260321',
-      action: 'A',
+      action: 'ACCEPTED',   // transform: 'reservationActionCode' → 'A'
       id: '401783612',
       // reference.qualifier omitted — default 'CN' should fill it
     },

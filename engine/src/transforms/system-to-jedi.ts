@@ -1,7 +1,7 @@
 import _ from 'lodash';
 import pino from 'pino';
 import type { RawSegment } from '../types/jedi';
-import type { TransformMap } from '../types/maps';
+import { type TransformMap, TransformFunctions } from '../types/maps';
 
 const logger = pino({ name: 'system-to-jedi' });
 
@@ -13,8 +13,14 @@ export function systemToJedi(systemJson: Record<string, unknown>, map: Transform
 
   for (const mapping of map.mappings) {
     const rawValue = _.get(systemJson, mapping.systemPath);
-    const value = rawValue !== undefined && rawValue !== null ? rawValue : mapping.default;
-    if (value === undefined || value === null) continue;
+    const resolved = rawValue !== undefined && rawValue !== null ? rawValue : mapping.default;
+    if (resolved === undefined || resolved === null) continue;
+
+    let value: unknown = resolved;
+    if (mapping.transform) {
+      const fn = TransformFunctions[mapping.transform] as ((v: string) => unknown) | undefined;
+      if (fn) value = fn(String(resolved));
+    }
 
     // jediPath formats supported:
     //   "b2.b2_element_01"           — flat (legacy)
