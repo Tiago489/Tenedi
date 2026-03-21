@@ -37,13 +37,14 @@ export const config = {
     keyPath: envOptional('AS2_KEY_PATH'),
   },
   routing: {
-    rules: (() => {
-      try {
-        return JSON.parse(envOptional('ROUTING_RULES', '[]')) as RoutingRule[];
-      } catch {
-        return [] as RoutingRule[];
-      }
-    })(),
+    rules: JSON.parse(process.env.ROUTING_RULES ?? JSON.stringify([
+      {
+        transactionSet: '204',
+        endpoint: 'https://webhook.site/4091a1e9-b93d-4182-bbaa-41d8c5e34bd4',
+        apiKey: '',
+        retries: 3,
+      },
+    ])) as RoutingRule[],
   },
   maps: {
     dbPath: envOptional('MAPS_DB_PATH', './maps/db'),

@@ -22,14 +22,14 @@ export async function deliverToAPI(transactionSet: string, payload: unknown): Pr
 
   for (let attempt = 1; attempt <= rule.retries + 1; attempt++) {
     try {
-      await axios.post(rule.endpoint, payload, {
+      const response = await axios.post(rule.endpoint, payload, {
         headers: {
           Authorization: `Bearer ${rule.apiKey}`,
           'Content-Type': 'application/json',
         },
         timeout: 30_000,
       });
-      logger.info({ transactionSet, endpoint: rule.endpoint, attempt }, 'Delivered to API');
+      logger.info({ transactionSet, endpoint: rule.endpoint, status: response.status }, 'payload delivered successfully');
       return;
     } catch (err: unknown) {
       lastError = err as Error;
