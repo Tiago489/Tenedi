@@ -39,7 +39,8 @@ export async function inboundRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: 'Invalid EDI: must start with ISA segment' });
     }
 
-    const jobId = crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16);
+    const hash = crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16);
+    const jobId = process.env.NODE_ENV === 'production' ? hash : `${hash}-${Date.now()}`;
     await inboundQueue.add('file-inbound', { raw, source: 'file-upload', filename: data.filename }, { jobId });
 
     logger.info({ jobId, filename: data.filename }, 'Inbound EDI enqueued via file upload');

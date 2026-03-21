@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { Worker, type Job } from 'bullmq';
+import axios from 'axios';
 import pino from 'pino';
 import { config } from '../../config/index';
 import { parseEDI } from '../../transforms/edi-parser';
@@ -8,6 +9,25 @@ import { generate997 } from '../../transforms/997-generator';
 import { mapRegistry } from '../../maps/registry';
 import { outboundQueue } from '../queues';
 import { deliverToAPI } from '../../routing/router';
+
+const OPS_URL = process.env.OPS_PLATFORM_URL ?? 'http://localhost:8000';
+
+async function recordJobInOps(job: Job, txSet: string): Promise<void> {
+  try {
+    await axios.post(`${OPS_URL}/api/jobs/`, {
+      job_id: job.id,
+      queue: 'edi-inbound',
+      source: (job.data as { source: string }).source,
+      transaction_set: txSet,
+      status: 'completed',
+      payload_preview: String((job.data as { raw: string }).raw).substring(0, 500),
+      received_at: new Date(job.timestamp).toISOString(),
+      processed_at: new Date().toISOString(),
+    }, { timeout: 5_000 });
+  } catch (err: unknown) {
+    logger.warn({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to record job in ops platform — continuing');
+  }
+}
 
 // Load seed maps
 import '../../maps/seeds/204.map';
@@ -37,6 +57,7 @@ const worker = new Worker(
           const map = mapRegistry.get(txSet, 'inbound');
           const systemJson = jediToSystem(tx, map);
           await deliverToAPI(txSet, systemJson);
+          await recordJobInOps(job, txSet);
           logger.info({ jobId: job.id, txSet }, 'Transaction delivered');
         } catch (err: unknown) {
           logger.error({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to process transaction');
