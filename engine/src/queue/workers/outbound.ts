@@ -72,7 +72,7 @@ const worker = new Worker(
         try {
           await sftpUpload(filename, finalEdi, {
             host: partner.sftp_host,
-            port: 22,
+            port: partner.sftp_port ?? 22,
             user: partner.sftp_user,
             password: partner.sftp_password,
             outboundDir: partner.sftp_outbound_dir || undefined,

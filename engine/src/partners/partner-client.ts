@@ -11,6 +11,7 @@ export interface TradingPartner {
   isa_qualifier: string;
   transport: 'sftp' | 'as2' | 'rest';
   sftp_host: string;
+  sftp_port: number;
   sftp_user: string;
   sftp_password: string;
   sftp_inbound_dir: string;

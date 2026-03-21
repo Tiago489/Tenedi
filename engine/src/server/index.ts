@@ -2,14 +2,16 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import multipart from '@fastify/multipart';
 import schedule from 'node-schedule';
+import axios from 'axios';
 import pino from 'pino';
 import { config } from '../config/index';
 import { inboundRoutes } from './routes/inbound';
 import { outboundRoutes } from './routes/outbound';
 import { mapsRoutes } from './routes/maps';
 import { handleAS2Receive } from '../connectors/as2';
-import { sftpPoller } from '../connectors/sftp';
+import { sftpPoller, startPartnerPoller, type SFTPPoller } from '../connectors/sftp';
 import { mapRegistry } from '../maps/registry';
+import type { TradingPartner } from '../partners/partner-client';
 
 // Load seed maps
 import '../maps/seeds/204.map';
@@ -20,6 +22,7 @@ import '../maps/seeds/990.map';
 import '../maps/seeds/997.map';
 
 const logger = pino({ name: 'server' });
+const OPS_URL = process.env.OPS_PLATFORM_URL ?? 'http://localhost:8000';
 
 async function buildServer() {
   const fastify = Fastify({ logger: false, bodyLimit: 10 * 1024 * 1024 });
@@ -42,6 +45,19 @@ async function buildServer() {
   return fastify;
 }
 
+async function fetchSFTPPartners(): Promise<TradingPartner[]> {
+  try {
+    const res = await axios.get<{ partners: TradingPartner[] }>(
+      `${OPS_URL}/api/partners/?transport=sftp`,
+      { timeout: 5_000 },
+    );
+    return res.data.partners ?? [];
+  } catch (err: unknown) {
+    logger.warn({ err: (err as Error).message }, 'Could not fetch SFTP partners from ops platform — skipping partner pollers');
+    return [];
+  }
+}
+
 async function main() {
   mapRegistry.loadFromDisk();
 
@@ -49,6 +65,26 @@ async function main() {
   await app.listen({ host: config.server.host, port: config.server.port });
   logger.info({ port: config.server.port }, 'EDI transform engine started');
 
+  const partnerPollers: SFTPPoller[] = [];
+
+  // Start per-partner SFTP pollers
+  const sftpPartners = await fetchSFTPPartners();
+  if (sftpPartners.length > 0) {
+    const intervalMins = Math.max(1, Math.round(config.sftp.pollIntervalMs / 60000));
+    for (const partner of sftpPartners) {
+      try {
+        const poller = await startPartnerPoller(partner, fn => {
+          schedule.scheduleJob(`*/${intervalMins} * * * *`, fn);
+        });
+        partnerPollers.push(poller);
+      } catch (err: unknown) {
+        logger.warn({ partnerId: partner.partner_id, err: (err as Error).message }, 'Partner SFTP connect failed — poller skipped');
+      }
+    }
+    logger.info({ count: partnerPollers.length }, 'Partner SFTP pollers started');
+  }
+
+  // Legacy global SFTP poller (for non-partner-aware inbound)
   if (config.sftp.host) {
     try {
       await sftpPoller.connect();
@@ -56,14 +92,17 @@ async function main() {
       schedule.scheduleJob(`*/${intervalMins} * * * *`, () => {
         sftpPoller.poll().catch(err => logger.error({ err: err.message }, 'SFTP poll error'));
       });
-      logger.info({ intervalMs: config.sftp.pollIntervalMs }, 'SFTP poller scheduled');
+      logger.info({ intervalMs: config.sftp.pollIntervalMs }, 'Global SFTP poller scheduled');
     } catch (err: unknown) {
-      logger.warn({ err: (err as Error).message }, 'SFTP connect failed — poller disabled');
+      logger.warn({ err: (err as Error).message }, 'Global SFTP connect failed — poller disabled');
     }
   }
 
   process.on('SIGTERM', async () => {
     logger.info('SIGTERM received, shutting down');
+    for (const poller of partnerPollers) {
+      await poller.disconnect();
+    }
     await sftpPoller.disconnect();
     await app.close();
     process.exit(0);

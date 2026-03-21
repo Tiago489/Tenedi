@@ -97,7 +97,7 @@ const worker = new Worker(
       const ack997 = generate997(parsed);
       await outboundQueue.add(
         '997-ack',
-        { ediContent: ack997, transport: 'sftp', source: 'auto-997', partnerId: partner?.partner_id },
+        { ediContent: ack997, transactionSet: '997', transport: 'sftp', source: 'auto-997', partnerId: partner?.partner_id },
         { priority: 1 },
       );
       logger.info({ jobId: job.id }, '997 ACK enqueued');
