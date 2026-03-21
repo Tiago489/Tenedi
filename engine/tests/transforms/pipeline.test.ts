@@ -45,12 +45,11 @@ describe('Full Pipeline', () => {
     expect(result.shipment?.shipmentId).toBe('SHIP001');
   });
 
-  test('TransformFunctions.toNumber converts weight string to number string', () => {
+  test('TransformFunctions.toNumber converts weight string to a number', () => {
     const parsed = parseEDI(SAMPLE_204);
     const tx = parsed.interchange.functional_groups[0].transactions[0];
     const result = jediToSystem(tx, TEST_MAP) as Record<string, Record<string, unknown>>;
-    // toNumber returns a string representation of parsed float
-    expect(result.totals?.weight).toBeDefined();
+    expect(typeof result.totals?.weight).toBe('number');
   });
 
   test('missing JEDI path uses default value from mapping', () => {

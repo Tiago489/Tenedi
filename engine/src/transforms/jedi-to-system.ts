@@ -37,7 +37,7 @@ function applyMapping(
   if (mapping.transform) {
     const fn = TransformFunctions[mapping.transform];
     if (fn) {
-      value = (fn as (v: string) => string)(String(rawValue));
+      value = (fn as (v: string) => unknown)(String(rawValue));
     } else {
       logger.warn({ transform: mapping.transform }, 'Unknown transform function');
     }

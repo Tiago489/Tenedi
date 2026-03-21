@@ -24,7 +24,7 @@ export const TransformFunctions = {
   },
   trimPad10: (v: string) => v.trim().substring(0, 10).padEnd(10),
   toUpperCase: (v: string) => v.toUpperCase(),
-  toNumber: (v: string) => String(parseFloat(v)),
+  toNumber: (v: string) => parseFloat(v),
   trim: (v: string) => v.trim(),
   cents: (v: string) => String(Math.round(parseFloat(v) * 100)),
   fromCents: (v: string) => (parseInt(v, 10) / 100).toFixed(2),
