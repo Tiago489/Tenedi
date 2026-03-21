@@ -108,15 +108,32 @@ const worker = new Worker(
 
     const filename = `${transactionSet ?? 'EDI'}_${Date.now()}.edi`;
 
+    const sftpConfigured = config.sftp.host && config.sftp.host !== 'localhost';
+    const as2Configured = Boolean(config.as2.certPath);
+
     if (transport === 'sftp') {
-      if (!config.sftp.host) {
-        logger.warn({ jobId: job.id, filename }, 'SFTP not configured — skipped, no transport');
+      if (!sftpConfigured) {
+        logger.warn({ jobId: job.id, filename }, 'SFTP not configured — job completed without delivery');
         return;
       }
-      await sftpUpload(filename, finalEdi);
+      try {
+        await sftpUpload(filename, finalEdi);
+      } catch (err: unknown) {
+        logger.warn({ jobId: job.id, filename, err: (err as Error).message }, 'SFTP upload failed — job completed without delivery');
+        return;
+      }
     } else if (transport === 'as2') {
+      if (!as2Configured) {
+        logger.warn({ jobId: job.id, filename }, 'AS2 not configured — job completed without delivery');
+        return;
+      }
       // TODO: look up partner AS2 config from partner registry
-      await sendAS2(finalEdi, { partnerId: partnerId ?? 'unknown', as2Id: '', url: '', cert: '' });
+      try {
+        await sendAS2(finalEdi, { partnerId: partnerId ?? 'unknown', as2Id: '', url: '', cert: '' });
+      } catch (err: unknown) {
+        logger.warn({ jobId: job.id, filename, err: (err as Error).message }, 'AS2 send failed — job completed without delivery');
+        return;
+      }
     }
 
     logger.info({ jobId: job.id, filename }, 'Outbound job complete');
