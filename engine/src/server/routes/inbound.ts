@@ -47,7 +47,7 @@ export async function inboundRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.code(202).send({ jobId, status: 'queued' });
   });
 
-  // DEBUG ONLY — parse EDI and return raw JEDI; do not use in production
+  // DEBUG ONLY — parse EDI and return first transaction as JEDI; no map lookup; do not use in production
   fastify.post('/debug/parse', async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.code(400).send({ error: 'No file provided' });
@@ -58,7 +58,10 @@ export async function inboundRoutes(fastify: FastifyInstance): Promise<void> {
 
     try {
       const parsed = parseEDI(raw);
-      return reply.send(parsed.interchange);
+      const tx = parsed.interchange.functional_groups[0]?.transactions[0];
+      if (!tx) return reply.code(400).send({ error: 'No transaction found in EDI' });
+      const transactionSet = tx.transaction_set_header_ST.transaction_set_identifier_code_01;
+      return reply.send({ jedi: tx, transactionSet });
     } catch (err: unknown) {
       return reply.code(400).send({ error: (err as Error).message });
     }
@@ -79,10 +82,19 @@ export async function inboundRoutes(fastify: FastifyInstance): Promise<void> {
       if (!tx) return reply.code(400).send({ error: 'No transaction found in EDI' });
 
       const txSet = tx.transaction_set_header_ST.transaction_set_identifier_code_01;
-      const map = mapRegistry.get(txSet, 'inbound');
-      const systemJson = jediToSystem(tx, map);
 
-      return reply.send({ jedi: tx, systemJson });
+      let systemJson: Record<string, unknown> = {};
+      let warning: string | undefined;
+      try {
+        const map = mapRegistry.get(txSet, 'inbound');
+        systemJson = jediToSystem(tx, map);
+      } catch {
+        warning = `No inbound map found for ${txSet} — JEDI returned without transformation`;
+      }
+
+      const responseBody: Record<string, unknown> = { jedi: tx, systemJson };
+      if (warning) responseBody.warning = warning;
+      return reply.send(responseBody);
     } catch (err: unknown) {
       return reply.code(400).send({ error: (err as Error).message });
     }

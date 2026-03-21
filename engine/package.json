@@ -9,7 +9,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server/index.ts",
     "worker:inbound": "ts-node-dev --respawn --transpile-only src/queue/workers/inbound.ts",
     "worker:outbound": "ts-node-dev --respawn --transpile-only src/queue/workers/outbound.ts",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "import-examples": "ts-node --project scripts/tsconfig.json scripts/import-examples.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^9.4.0",
