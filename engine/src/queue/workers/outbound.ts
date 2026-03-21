@@ -8,6 +8,7 @@ import { serializeEDI } from '../../transforms/edi-serializer';
 import { buildInterchangeWrapper, buildTransaction } from '../../transforms/interchange-builder';
 import { sftpUpload } from '../../connectors/sftp';
 import { sendAS2 } from '../../connectors/as2';
+import { getPartner } from '../../partners/partner-client';
 
 import '../../maps/seeds/204.map';
 import '../../maps/seeds/210.map';
@@ -34,7 +35,13 @@ const worker = new Worker(
       partnerId?: string;
     };
 
-    logger.info({ jobId: job.id, transactionSet, transport }, 'Processing outbound job');
+    logger.info({ jobId: job.id, transactionSet, transport, partnerId }, 'Processing outbound job');
+
+    // Look up trading partner for config
+    const partner = partnerId ? await getPartner(partnerId) : null;
+    if (partner) {
+      logger.info({ jobId: job.id, partnerId, partnerName: partner.name }, 'Trading partner resolved');
+    }
 
     let finalEdi: string;
 
@@ -43,7 +50,10 @@ const worker = new Worker(
     } else if (systemJson && transactionSet) {
       const map = mapRegistry.get(transactionSet, 'outbound');
       const rawSegments = systemToJedi(systemJson, map);
-      const interchangeWrapper = buildInterchangeWrapper(transactionSet);
+      const partnerIds = partner
+        ? { senderId: partner.partner_id, senderQualifier: partner.isa_qualifier }
+        : undefined;
+      const interchangeWrapper = buildInterchangeWrapper(transactionSet, partnerIds);
       interchangeWrapper.functional_groups[0].transactions.push(
         buildTransaction(transactionSet, rawSegments.length),
       );
@@ -54,30 +64,52 @@ const worker = new Worker(
 
     const filename = `${transactionSet ?? 'EDI'}_${Date.now()}.edi`;
 
-    const sftpConfigured = config.sftp.host && config.sftp.host !== 'localhost';
-    const as2Configured = Boolean(config.as2.certPath);
-
     if (transport === 'sftp') {
-      if (!sftpConfigured) {
+      const partnerSftpConfigured = partner && partner.sftp_host;
+      const globalSftpConfigured = config.sftp.host && config.sftp.host !== 'localhost';
+
+      if (partnerSftpConfigured) {
+        try {
+          await sftpUpload(filename, finalEdi, {
+            host: partner.sftp_host,
+            port: 22,
+            user: partner.sftp_user,
+            password: partner.sftp_password,
+            outboundDir: partner.sftp_outbound_dir || undefined,
+          });
+        } catch (err: unknown) {
+          logger.warn({ jobId: job.id, filename, err: (err as Error).message }, 'Partner SFTP upload failed — job completed without delivery');
+          return;
+        }
+      } else if (globalSftpConfigured) {
+        try {
+          await sftpUpload(filename, finalEdi);
+        } catch (err: unknown) {
+          logger.warn({ jobId: job.id, filename, err: (err as Error).message }, 'SFTP upload failed — job completed without delivery');
+          return;
+        }
+      } else {
         logger.warn({ jobId: job.id, filename }, 'SFTP not configured — job completed without delivery');
         return;
       }
-      try {
-        await sftpUpload(filename, finalEdi);
-      } catch (err: unknown) {
-        logger.warn({ jobId: job.id, filename, err: (err as Error).message }, 'SFTP upload failed — job completed without delivery');
-        return;
-      }
     } else if (transport === 'as2') {
-      if (!as2Configured) {
+      if (partner && partner.as2_url) {
+        try {
+          await sendAS2(finalEdi, {
+            partnerId: partner.partner_id,
+            as2Id: partner.as2_id,
+            url: partner.as2_url,
+            cert: partner.as2_cert,
+          });
+        } catch (err: unknown) {
+          logger.warn({ jobId: job.id, filename, err: (err as Error).message }, 'AS2 send failed — job completed without delivery');
+          return;
+        }
+      } else if (!config.as2.certPath) {
         logger.warn({ jobId: job.id, filename }, 'AS2 not configured — job completed without delivery');
         return;
-      }
-      // TODO: look up partner AS2 config from partner registry
-      try {
-        await sendAS2(finalEdi, { partnerId: partnerId ?? 'unknown', as2Id: '', url: '', cert: '' });
-      } catch (err: unknown) {
-        logger.warn({ jobId: job.id, filename, err: (err as Error).message }, 'AS2 send failed — job completed without delivery');
+      } else {
+        logger.warn({ jobId: job.id }, 'AS2 partner config missing — job completed without delivery');
         return;
       }
     }

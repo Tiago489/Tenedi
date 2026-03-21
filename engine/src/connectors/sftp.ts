@@ -104,12 +104,45 @@ export class SFTPPoller {
 
 export const sftpPoller = new SFTPPoller();
 
-export async function sftpUpload(filename: string, content: string): Promise<void> {
-  const client = new SFTPPoller();
+export interface SFTPOverride {
+  host: string;
+  port?: number;
+  user: string;
+  password?: string;
+  privateKey?: string;
+  outboundDir?: string;
+}
+
+export async function sftpUpload(filename: string, content: string, override?: SFTPOverride): Promise<void> {
+  if (override) {
+    // Per-partner upload with custom credentials
+    const client = new SFTPClient();
+    const connectConfig: Record<string, unknown> = {
+      host: override.host,
+      port: override.port ?? 22,
+      username: override.user,
+    };
+    if (override.privateKey) {
+      connectConfig['privateKey'] = override.privateKey;
+    } else {
+      connectConfig['password'] = override.password ?? '';
+    }
+    await client.connect(connectConfig as Parameters<SFTPClient['connect']>[0]);
+    const remotePath = `${override.outboundDir ?? config.sftp.outboundDir}/${filename}`;
+    try {
+      await client.put(Buffer.from(content, 'utf-8'), remotePath);
+      logger.info({ filename, remotePath, host: override.host }, 'SFTP upload complete (partner config)');
+    } finally {
+      await client.end();
+    }
+    return;
+  }
+
+  const poller = new SFTPPoller();
   try {
-    await client.connect();
-    await client.upload(filename, content);
+    await poller.connect();
+    await poller.upload(filename, content);
   } finally {
-    await client.disconnect();
+    await poller.disconnect();
   }
 }

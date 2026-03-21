@@ -9,10 +9,11 @@ import { generate997 } from '../../transforms/997-generator';
 import { mapRegistry } from '../../maps/registry';
 import { outboundQueue } from '../queues';
 import { deliverToAPI } from '../../routing/router';
+import { getPartner } from '../../partners/partner-client';
 
 const OPS_URL = process.env.OPS_PLATFORM_URL ?? 'http://localhost:8000';
 
-export async function recordJobInOps(job: Job, txSet: string): Promise<void> {
+export async function recordJobInOps(job: Job, txSet: string, partnerId?: string): Promise<void> {
   try {
     await axios.post(`${OPS_URL}/api/jobs/`, {
       job_id: job.id,
@@ -23,6 +24,7 @@ export async function recordJobInOps(job: Job, txSet: string): Promise<void> {
       payload_preview: String((job.data as { raw: string }).raw).substring(0, 500),
       received_at: new Date(job.timestamp).toISOString(),
       processed_at: new Date().toISOString(),
+      partner_id: partnerId,
     }, { timeout: 5_000 });
   } catch (err: unknown) {
     logger.warn({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to record job in ops platform — continuing');
@@ -45,10 +47,20 @@ const connection = { url: config.redis.url };
 const worker = new Worker(
   'edi-inbound',
   async (job: Job) => {
-    const { raw, source, partnerId } = job.data as { raw: string; source: string; partnerId?: string };
-    logger.info({ jobId: job.id, source, partnerId }, 'Processing inbound job');
+    const { raw, source } = job.data as { raw: string; source: string; partnerId?: string };
+    logger.info({ jobId: job.id, source }, 'Processing inbound job');
 
     const parsed = parseEDI(raw);
+
+    // Extract ISA sender ID to identify trading partner
+    const isaSenderId = parsed.interchange.interchange_control_header_ISA.interchange_sender_id_06?.trim();
+    const partner = isaSenderId ? await getPartner(isaSenderId) : null;
+
+    if (partner) {
+      logger.info({ jobId: job.id, partnerId: partner.partner_id, partnerName: partner.name }, 'Trading partner identified');
+    } else {
+      logger.info({ jobId: job.id, isaSenderId }, 'No trading partner found — using static routing');
+    }
 
     for (const fg of parsed.interchange.functional_groups) {
       for (const tx of fg.transactions) {
@@ -56,8 +68,23 @@ const worker = new Worker(
         try {
           const map = mapRegistry.get(txSet, 'inbound');
           const systemJson = jediToSystem(tx, map);
-          await deliverToAPI(txSet, systemJson);
-          await recordJobInOps(job, txSet);
+
+          if (partner?.downstream_api_url) {
+            // Use partner-specific routing
+            await axios.post(partner.downstream_api_url, systemJson, {
+              headers: {
+                Authorization: `Bearer ${partner.downstream_api_key}`,
+                'Content-Type': 'application/json',
+              },
+              timeout: 30_000,
+            });
+            logger.info({ jobId: job.id, txSet, endpoint: partner.downstream_api_url }, 'Delivered via partner routing');
+          } else {
+            // Fall back to static routing rules
+            await deliverToAPI(txSet, systemJson);
+          }
+
+          await recordJobInOps(job, txSet, partner?.partner_id);
           logger.info({ jobId: job.id, txSet }, 'Transaction delivered');
         } catch (err: unknown) {
           logger.error({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to process transaction');
@@ -70,7 +97,7 @@ const worker = new Worker(
       const ack997 = generate997(parsed);
       await outboundQueue.add(
         '997-ack',
-        { ediContent: ack997, transport: 'sftp', source: 'auto-997' },
+        { ediContent: ack997, transport: 'sftp', source: 'auto-997', partnerId: partner?.partner_id },
         { priority: 1 },
       );
       logger.info({ jobId: job.id }, '997 ACK enqueued');

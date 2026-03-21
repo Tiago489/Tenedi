@@ -24,12 +24,19 @@ export function buildTransaction(txSet: string, bodySegmentCount: number): JediT
   };
 }
 
+export interface InterchangePartnerIds {
+  senderId?: string;
+  senderQualifier?: string;
+  receiverId?: string;
+  receiverQualifier?: string;
+}
+
 /**
  * Build a minimal JEDI interchange envelope for outbound EDI.
- * Sender/receiver IDs are placeholder values — the trading-partner
- * registry will supply real values once partner config is wired in.
+ * Caller may supply real sender/receiver IDs from trading-partner config;
+ * falls back to placeholder values when not provided.
  */
-export function buildInterchangeWrapper(txSet: string): JediInterchange {
+export function buildInterchangeWrapper(txSet: string, partner?: InterchangePartnerIds): JediInterchange {
   const now = new Date();
   const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
@@ -41,10 +48,10 @@ export function buildInterchangeWrapper(txSet: string): JediInterchange {
       authorization_information_02: '          ',
       security_information_qualifier_03: '00',
       security_information_04: '          ',
-      interchange_id_qualifier_05: 'ZZ',
-      interchange_sender_id_06: 'SENDER         ',
-      interchange_id_qualifier_07: 'ZZ',
-      interchange_receiver_id_08: 'RECEIVER       ',
+      interchange_id_qualifier_05: partner?.senderQualifier ?? 'ZZ',
+      interchange_sender_id_06: (partner?.senderId ?? 'SENDER').padEnd(15, ' '),
+      interchange_id_qualifier_07: partner?.receiverQualifier ?? 'ZZ',
+      interchange_receiver_id_08: (partner?.receiverId ?? 'RECEIVER').padEnd(15, ' '),
       interchange_date_09: date.slice(2),
       interchange_time_10: time,
       interchange_control_standards_identifier_11: 'U',
@@ -57,8 +64,8 @@ export function buildInterchangeWrapper(txSet: string): JediInterchange {
     functional_groups: [{
       functional_group_header_GS: {
         functional_identifier_code_01: GS_FUNCTIONAL_CODES[txSet] ?? 'XX',
-        application_senders_code_02: 'SENDER',
-        application_receivers_code_03: 'RECEIVER',
+        application_senders_code_02: partner?.senderId ?? 'SENDER',
+        application_receivers_code_03: partner?.receiverId ?? 'RECEIVER',
         date_04: date,
         time_05: time,
         group_control_number_06: ctrl,
