@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { Worker, type Job } from 'bullmq';
+import { Redis } from 'ioredis';
 import axios from 'axios';
 import pino from 'pino';
 import { config } from '../../config/index';
@@ -10,21 +11,37 @@ import { mapRegistry } from '../../maps/registry';
 import { outboundQueue } from '../queues';
 import { deliverToAPI } from '../../routing/router';
 import { getPartner } from '../../partners/partner-client';
+import { validateFull, markProcessed, type ValidationError, type ValidationWarning } from '../../validation/validator';
 
 const OPS_URL = process.env.OPS_PLATFORM_URL ?? 'http://localhost:8000';
 
-export async function recordJobInOps(job: Job, txSet: string, partnerId?: string): Promise<void> {
+export interface RecordJobOptions {
+  job: Job;
+  txSet: string;
+  partnerId?: string;
+  status?: string;
+  error_message?: string;
+  validation_errors?: ValidationError[];
+  validation_warnings?: ValidationWarning[];
+}
+
+export async function recordJobInOps(opts: RecordJobOptions): Promise<void> {
+  const { job, txSet, partnerId, status = 'completed', error_message, validation_errors, validation_warnings } = opts;
   try {
     await axios.post(`${OPS_URL}/api/jobs/`, {
       job_id: job.id,
       queue: 'edi-inbound',
       source: (job.data as { source: string }).source,
       transaction_set: txSet,
-      status: 'completed',
+      status,
       payload_preview: String((job.data as { raw: string }).raw).substring(0, 500),
+      raw_edi: (job.data as { raw: string }).raw,
       received_at: new Date(job.timestamp).toISOString(),
       processed_at: new Date().toISOString(),
       partner_id: partnerId,
+      ...(error_message !== undefined ? { error_message } : {}),
+      ...(validation_errors !== undefined ? { validation_errors } : {}),
+      ...(validation_warnings !== undefined ? { validation_warnings } : {}),
     }, { timeout: 5_000 });
   } catch (err: unknown) {
     logger.warn({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to record job in ops platform — continuing');
@@ -44,6 +61,8 @@ mapRegistry.loadFromDisk();
 const logger = pino({ name: 'worker:inbound' });
 const connection = { url: config.redis.url };
 
+const redisClient = new Redis(config.redis.url, { maxRetriesPerRequest: null, lazyConnect: true });
+
 const worker = new Worker(
   'edi-inbound',
   async (job: Job) => {
@@ -51,6 +70,25 @@ const worker = new Worker(
     logger.info({ jobId: job.id, source }, 'Processing inbound job');
 
     const parsed = parseEDI(raw);
+
+    // Validation pipeline — runs before mapping; failures write a structured error and stop processing
+    const validationResult = await validateFull(parsed, redisClient);
+    if (!validationResult.valid) {
+      const firstTxSet = parsed.transactionSets[0] ?? 'UNKNOWN';
+      await recordJobInOps({
+        job,
+        txSet: firstTxSet,
+        status: 'failed',
+        error_message: validationResult.errors.map(e => `[${e.code}] ${e.message}`).join('\n'),
+        validation_errors: validationResult.errors,
+        validation_warnings: validationResult.warnings,
+      });
+      logger.warn({ jobId: job.id, errors: validationResult.errors }, 'EDI validation failed — stopping processing');
+      return;
+    }
+    if (validationResult.warnings.length > 0) {
+      logger.warn({ jobId: job.id, warnings: validationResult.warnings }, 'EDI validation warnings');
+    }
 
     // Extract ISA sender ID to identify trading partner
     const isaSenderId = parsed.interchange.interchange_control_header_ISA.interchange_sender_id_06?.trim();
@@ -84,13 +122,26 @@ const worker = new Worker(
             await deliverToAPI(txSet, systemJson);
           }
 
-          await recordJobInOps(job, txSet, partner?.partner_id);
+          await recordJobInOps({
+            job,
+            txSet,
+            partnerId: partner?.partner_id,
+            validation_warnings: validationResult.warnings.length > 0 ? validationResult.warnings : undefined,
+          });
           logger.info({ jobId: job.id, txSet }, 'Transaction delivered');
         } catch (err: unknown) {
           logger.error({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to process transaction');
           throw err;
         }
       }
+    }
+
+    // Mark interchange as processed in Redis for duplicate detection
+    const isa = parsed.interchange.interchange_control_header_ISA;
+    const senderId = isa['interchange_sender_id_06']?.trim() ?? '';
+    const controlNumber = isa['interchange_control_number_13']?.trim() ?? '';
+    if (senderId && controlNumber) {
+      await markProcessed(senderId, controlNumber, redisClient);
     }
 
     try {

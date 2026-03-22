@@ -7,6 +7,7 @@ class JobRecord(models.Model):
         ('active', 'Active'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),
+        ('reprocessing', 'Reprocessing'),
     ]
 
     job_id = models.CharField(max_length=100, unique=True)
@@ -19,10 +20,19 @@ class JobRecord(models.Model):
         on_delete=models.SET_NULL,
         related_name='jobs',
     )
+    reprocessed_from = models.ForeignKey(
+        'self',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reprocessed_jobs',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='queued')
     payload_preview = models.TextField(blank=True)  # first 500 chars of raw EDI
+    raw_edi = models.TextField(blank=True)  # full raw EDI for reprocessing
     error_message = models.TextField(blank=True)
     ai_narrative = models.TextField(blank=True)
+    validation_errors = models.JSONField(null=True, blank=True)
+    validation_warnings = models.JSONField(null=True, blank=True)
     retry_count = models.PositiveSmallIntegerField(default=0)
     received_at = models.DateTimeField()
     processed_at = models.DateTimeField(null=True, blank=True)

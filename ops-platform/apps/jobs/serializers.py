@@ -7,5 +7,7 @@ class JobRecordSerializer(serializers.ModelSerializer):
         model = JobRecord
         fields = [
             'job_id', 'queue', 'source', 'transaction_set',
-            'status', 'payload_preview', 'received_at', 'processed_at',
+            'status', 'payload_preview', 'raw_edi',
+            'error_message', 'validation_errors', 'validation_warnings',
+            'received_at', 'processed_at',
         ]

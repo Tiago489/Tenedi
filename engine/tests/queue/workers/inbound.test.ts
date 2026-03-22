@@ -3,6 +3,10 @@ jest.mock('bullmq', () => ({
   Worker: jest.fn(() => ({ on: jest.fn(), close: jest.fn() })),
 }));
 
+jest.mock('ioredis', () => ({
+  Redis: jest.fn(() => ({ get: jest.fn(), set: jest.fn(), on: jest.fn() })),
+}));
+
 jest.mock('../../../src/maps/registry', () => ({
   mapRegistry: { publish: jest.fn(), loadFromDisk: jest.fn(), get: jest.fn() },
 }));
@@ -48,7 +52,7 @@ describe('recordJobInOps', () => {
     mockPost.mockResolvedValue({ status: 201 });
     const job = makeJob({ id: 'job-001', source: 'file-upload', raw: 'ISA*00*TEST' });
 
-    await recordJobInOps(job, '204');
+    await recordJobInOps({ job, txSet: '204' });
 
     expect(mockPost).toHaveBeenCalledTimes(1);
 
@@ -69,22 +73,33 @@ describe('recordJobInOps', () => {
     const longRaw = 'X'.repeat(1000);
     const job = makeJob({ raw: longRaw });
 
-    await recordJobInOps(job, '204');
+    await recordJobInOps({ job, txSet: '204' });
 
     const [, body] = mockPost.mock.calls[0] as [string, Record<string, unknown>];
     expect((body.payload_preview as string).length).toBeLessThanOrEqual(500);
   });
 
+  test('includes status and error_message when provided', async () => {
+    mockPost.mockResolvedValue({ status: 201 });
+    const job = makeJob({ id: 'job-002' });
+
+    await recordJobInOps({ job, txSet: '204', status: 'failed', error_message: '[MISSING_SCAC] SCAC missing' });
+
+    const [, body] = mockPost.mock.calls[0] as [string, Record<string, unknown>];
+    expect(body.status).toBe('failed');
+    expect(body.error_message).toBe('[MISSING_SCAC] SCAC missing');
+  });
+
   test('does not throw when the ops platform is unreachable', async () => {
     mockPost.mockRejectedValue(new Error('ECONNREFUSED'));
 
-    await expect(recordJobInOps(makeJob(), '204')).resolves.toBeUndefined();
+    await expect(recordJobInOps({ job: makeJob(), txSet: '204' })).resolves.toBeUndefined();
   });
 
   test('does not throw when axios returns a 500 error', async () => {
     const err = Object.assign(new Error('Internal Server Error'), { response: { status: 500 } });
     mockPost.mockRejectedValue(err);
 
-    await expect(recordJobInOps(makeJob(), '204')).resolves.toBeUndefined();
+    await expect(recordJobInOps({ job: makeJob(), txSet: '204' })).resolves.toBeUndefined();
   });
 });

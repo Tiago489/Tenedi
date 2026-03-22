@@ -5,6 +5,7 @@ import { inboundQueue } from '../../queue/queues';
 import { parseEDI } from '../../transforms/edi-parser';
 import { jediToSystem } from '../../transforms/jedi-to-system';
 import { mapRegistry } from '../../maps/registry';
+import { validateFull } from '../../validation/validator';
 
 const logger = pino({ name: 'route:inbound' });
 
@@ -95,6 +96,38 @@ export async function inboundRoutes(fastify: FastifyInstance): Promise<void> {
       const responseBody: Record<string, unknown> = { jedi: tx, systemJson };
       if (warning) responseBody.warning = warning;
       return reply.send(responseBody);
+    } catch (err: unknown) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+  });
+
+  // DEBUG ONLY — validate EDI without enqueuing; returns validation result + metadata
+  fastify.post('/debug/validate', async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'No file provided' });
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of data.file) chunks.push(chunk);
+    const raw = Buffer.concat(chunks).toString('utf-8');
+
+    try {
+      const parsed = parseEDI(raw);
+      const isa = parsed.interchange.interchange_control_header_ISA;
+      const senderId = isa['interchange_sender_id_06']?.trim() ?? '';
+      const controlNumber = isa['interchange_control_number_13']?.trim() ?? '';
+      const transactionSet = parsed.transactionSets[0] ?? 'UNKNOWN';
+
+      // Validate without Redis (no duplicate check in debug mode)
+      const result = await validateFull(parsed);
+
+      return reply.send({
+        valid: result.valid,
+        errors: result.errors,
+        warnings: result.warnings,
+        transactionSet,
+        senderId,
+        controlNumber,
+      });
     } catch (err: unknown) {
       return reply.code(400).send({ error: (err as Error).message });
     }
