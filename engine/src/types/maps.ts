@@ -32,4 +32,21 @@ export const TransformFunctions = {
     const codes: Record<string, string> = { 'ACCEPTED': 'A', 'CANCELED': 'D', 'DELETE': 'R' };
     return codes[v] ?? v;
   },
+  paymentMethodCode: (v: string) => {
+    const codes: Record<string, string> = {
+      'PP': 'PREPAID_BY_SELLER',
+      'CC': 'COLLECT',
+      'NC': 'SERVICE_FREIGHT_NO_CHARGES',
+    };
+    return codes[v] ?? v;
+  },
+  serviceLevel211: (v: string) => {
+    const codes: Record<string, string> = {
+      'DEL': 'DELIVERY',
+      'PUC': 'PICKUP',
+      'PUD': 'DELIVERY',
+      'PDL': 'PICKUP_AND_DELIVERY',
+    };
+    return codes[v] ?? v;
+  },
 } as const;

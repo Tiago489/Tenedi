@@ -40,6 +40,17 @@ REFERENCE_TABLES = [
             'LH': 'NONE',
         },
     },
+    {
+        'name': 'ORDER_SERVICE_LEVEL',
+        'description': 'AT5 service level codes used in 211 BOL (AT5_01). '
+                       'Maps X12 code to human-readable delivery type.',
+        'data': {
+            'DEL': 'DELIVERY',
+            'PUC': 'PICKUP',
+            'PUD': 'DELIVERY',
+            'PDL': 'PICKUP_AND_DELIVERY',
+        },
+    },
 ]
 
 
