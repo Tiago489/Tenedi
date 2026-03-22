@@ -38,3 +38,5 @@ npm-debug.log*
 # Test coverage
 engine/coverage/
 .claude/
+ops-platform/backup.json
+sftp-data/

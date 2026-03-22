@@ -15,7 +15,7 @@ class TradingPartnerAdmin(admin.ModelAdmin):
         }),
         ('SFTP Config', {
             'classes': ('collapse',),
-            'fields': ('sftp_host', 'sftp_user', 'sftp_password', 'sftp_inbound_dir', 'sftp_outbound_dir'),
+            'fields': ('sftp_host', 'sftp_port', 'sftp_user', 'sftp_password', 'sftp_inbound_dir', 'sftp_outbound_dir'),
         }),
         ('AS2 Config', {
             'classes': ('collapse',),

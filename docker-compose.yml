@@ -91,16 +91,16 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-tenet_edi}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: tenet_edi
+      POSTGRES_USER: tenet
+      POSTGRES_PASSWORD: tenet123
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U tenet"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -111,15 +111,10 @@ services:
     ports:
       - "2222:22"
     volumes:
-      - sftp_inbound:/home/ediuser/inbound
-      - sftp_outbound:/home/ediuser/outbound
-      - sftp_archive:/home/ediuser/archive
-    command: ediuser:${SFTP_PASSWORD:-sftppass}:1001
+      - ./sftp-data:/home/edi
+    command: edi:edi123:::inbound,outbound,archive
     restart: unless-stopped
 
 volumes:
   redis_data:
-  postgres_data:
-  sftp_inbound:
-  sftp_outbound:
-  sftp_archive:
+  postgres-data:

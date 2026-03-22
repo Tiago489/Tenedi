@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib import messages
 from django.utils import timezone
-from .models import ReferenceTable, JediSampleFixture, TransformMap, DSLKeywordRequest, DSLExample
+from .models import ReferenceTable, JediSampleFixture, TransformMap, DSLKeywordRequest, DSLExample, MappingExample
 from services.engine_client import EngineClient
 
 
@@ -114,3 +114,48 @@ class DSLExampleAdmin(admin.ModelAdmin):
     list_display = ('transaction_set', 'intent', 'created_at')
     list_filter = ('transaction_set',)
     search_fields = ('intent', 'dsl_source')
+
+
+@admin.register(MappingExample)
+class MappingExampleAdmin(admin.ModelAdmin):
+    list_display = ('transaction_set', 'direction', 'trading_partner', 'short_hash', 'is_validated', 'created_at')
+    list_filter = ('transaction_set', 'direction', 'is_validated', 'trading_partner')
+    search_fields = ('transaction_set', 'content_hash')
+    readonly_fields = ('content_hash', 'raw_edi', 'jedi_output', 'system_json_output', 'created_at')
+    actions = ['mark_validated', 'mark_unvalidated']
+
+    fieldsets = (
+        ('Classification', {
+            'fields': ('transaction_set', 'direction', 'trading_partner', 'is_validated', 'content_hash', 'created_at'),
+        }),
+        ('DSL Source (edit to fill in the mapping)', {
+            'fields': ('dsl_source',),
+            'classes': ('wide',),
+        }),
+        ('Raw EDI', {
+            'fields': ('raw_edi',),
+            'classes': ('collapse',),
+        }),
+        ('JEDI Output', {
+            'fields': ('jedi_output',),
+            'classes': ('collapse',),
+        }),
+        ('System JSON Output', {
+            'fields': ('system_json_output',),
+            'classes': ('collapse',),
+        }),
+    )
+
+    @admin.display(description='Hash')
+    def short_hash(self, obj):
+        return obj.content_hash[:8]
+
+    @admin.action(description='Mark selected as validated')
+    def mark_validated(self, request, queryset):
+        updated = queryset.update(is_validated=True)
+        messages.success(request, f'{updated} example(s) marked as validated.')
+
+    @admin.action(description='Mark selected as unvalidated')
+    def mark_unvalidated(self, request, queryset):
+        updated = queryset.update(is_validated=False)
+        messages.success(request, f'{updated} example(s) marked as unvalidated.')

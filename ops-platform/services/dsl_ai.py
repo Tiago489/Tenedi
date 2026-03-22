@@ -17,7 +17,7 @@ class DSLGenerator:
           {'status': 'needs_keyword', 'description': str}     if AI signals NEEDS_NEW_KEYWORD
           {'status': 'error', 'error': str}                   on failure
         """
-        from apps.maps.models import JediSampleFixture, DSLExample, DSLKeywordRequest
+        from apps.maps.models import JediSampleFixture, DSLExample, DSLKeywordRequest, MappingExample
         from services.engine_client import EngineClient
 
         # 1. Load JEDI sample fixture for context
@@ -26,12 +26,28 @@ class DSLGenerator:
         ).first()
         jedi_schema_hint = str(fixture.sample_jedi)[:2000] if fixture else '(no sample available)'
 
-        # 2. Load few-shot examples (up to 5)
-        examples = DSLExample.objects.filter(transaction_set=transaction_set)[:5]
-        few_shot = '\n\n'.join(
+        # 2a. Synthetic few-shot examples (intent → DSL pairs)
+        dsl_examples = DSLExample.objects.filter(transaction_set=transaction_set)[:5]
+        synthetic_shots = '\n\n'.join(
             f'Intent: {ex.intent}\nDSL:\n{ex.dsl_source}'
-            for ex in examples
+            for ex in dsl_examples
         )
+
+        # 2b. Real production examples from the mapping flywheel (JEDI → system JSON → DSL)
+        mapping_examples = MappingExample.objects.filter(
+            transaction_set=transaction_set,
+            is_validated=True,
+        ).exclude(dsl_source='')[:5]
+        production_shots = '\n\n'.join(
+            f'# Real production example (hash {ex.content_hash[:8]})\n'
+            f'JEDI snippet:\n{str(ex.jedi_output)[:800]}\n'
+            f'System JSON output:\n{str(ex.system_json_output)[:400]}\n'
+            f'DSL that produced it:\n{ex.dsl_source}'
+            for ex in mapping_examples
+        )
+
+        few_shot_parts = [p for p in [synthetic_shots, production_shots] if p]
+        few_shot = '\n\n---\n\n'.join(few_shot_parts)
 
         # 3. Fetch AI vocabulary from engine
         try:

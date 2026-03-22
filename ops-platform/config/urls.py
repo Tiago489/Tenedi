@@ -9,4 +9,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/maps/', include('apps.maps.urls')),
     path('api/jobs/', include('apps.jobs.urls')),
+    path('api/partners/', include('apps.partners.urls')),
 ]

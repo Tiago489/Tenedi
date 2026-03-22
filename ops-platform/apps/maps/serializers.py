@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import TransformMap, ReferenceTable, DSLKeywordRequest
+from .models import TransformMap, ReferenceTable, DSLKeywordRequest, MappingExample
 
 
 class TransformMapSerializer(serializers.ModelSerializer):
@@ -23,3 +23,14 @@ class DSLKeywordRequestSerializer(serializers.ModelSerializer):
         model = DSLKeywordRequest
         fields = '__all__'
         read_only_fields = ('created_at',)
+
+
+class MappingExampleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MappingExample
+        fields = [
+            'id', 'transaction_set', 'direction', 'trading_partner',
+            'raw_edi', 'jedi_output', 'system_json_output',
+            'dsl_source', 'content_hash', 'is_validated', 'created_at',
+        ]
+        read_only_fields = ('id', 'created_at')

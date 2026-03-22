@@ -15,6 +15,7 @@ class TradingPartner(models.Model):
 
     # SFTP config
     sftp_host = models.CharField(max_length=255, blank=True)
+    sftp_port = models.IntegerField(default=22)
     sftp_user = models.CharField(max_length=255, blank=True)
     sftp_password = models.CharField(max_length=255, blank=True)  # encrypted in production
     sftp_inbound_dir = models.CharField(max_length=500, blank=True)

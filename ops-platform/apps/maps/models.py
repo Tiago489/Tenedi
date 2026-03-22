@@ -85,3 +85,36 @@ class DSLExample(models.Model):
 
     def __str__(self) -> str:
         return f'DSLExample({self.transaction_set})'
+
+
+class MappingExample(models.Model):
+    """
+    A real production EDI file processed through the pipeline.
+    Each record stores the raw EDI, the JEDI parse output, the system JSON
+    output, and (once reviewed) the DSL that produced that output.
+    Validated records are used as RAG few-shot context when the AI generates DSL.
+    """
+    DIRECTION_CHOICES = [('inbound', 'Inbound'), ('outbound', 'Outbound')]
+
+    transaction_set = models.CharField(max_length=10)
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES, default='inbound')
+    trading_partner = models.ForeignKey(
+        'partners.TradingPartner',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='mapping_examples',
+    )
+    raw_edi = models.TextField()
+    jedi_output = models.JSONField()
+    system_json_output = models.JSONField()
+    dsl_source = models.TextField(blank=True)  # filled in after human review
+    content_hash = models.CharField(max_length=64, unique=True)  # SHA1 of raw_edi, for dedup
+    is_validated = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'maps_mapping_example'
+        ordering = ['-created_at']
+
+    def __str__(self) -> str:
+        return f'MappingExample({self.transaction_set}, {self.content_hash[:8]})'
