@@ -29,7 +29,7 @@ export const config = {
     inboundDir: envOptional('SFTP_INBOUND_DIR', '/inbound'),
     outboundDir: envOptional('SFTP_OUTBOUND_DIR', '/outbound'),
     archiveDir: envOptional('SFTP_ARCHIVE_DIR', '/archive'),
-    pollIntervalMs: parseInt(envOptional('SFTP_POLL_INTERVAL_MS', '30000'), 10),
+    pollIntervalMs: parseInt(envOptional('SFTP_POLL_INTERVAL_MS', '300000'), 10),
   },
   as2: {
     senderId: envOptional('AS2_SENDER_ID'),

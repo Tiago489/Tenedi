@@ -16,6 +16,8 @@ export interface TradingPartner {
   sftp_password: string;
   sftp_inbound_dir: string;
   sftp_outbound_dir: string;
+  sftp_poll_interval_ms: number;
+  sftp_after_pull: 'MOVE_TO_ARCHIVE' | 'DELETE';
   as2_id: string;
   as2_url: string;
   as2_cert: string;

@@ -8,6 +8,7 @@ import { config } from '../config/index';
 import { inboundRoutes } from './routes/inbound';
 import { outboundRoutes } from './routes/outbound';
 import { mapsRoutes } from './routes/maps';
+import { partnersRoutes } from './routes/partners';
 import { handleAS2Receive } from '../connectors/as2';
 import { sftpPoller, startPartnerPoller, type SFTPPoller } from '../connectors/sftp';
 import { mapRegistry } from '../maps/registry';
@@ -38,6 +39,7 @@ async function buildServer() {
   await fastify.register(inboundRoutes, { prefix: '/edi' });
   await fastify.register(outboundRoutes, { prefix: '/edi' });
   await fastify.register(mapsRoutes, { prefix: '/maps' });
+  await fastify.register(partnersRoutes, { prefix: '/api/partners' });
 
   fastify.post('/as2/receive', handleAS2Receive);
   fastify.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
@@ -70,9 +72,10 @@ async function main() {
   // Start per-partner SFTP pollers
   const sftpPartners = await fetchSFTPPartners();
   if (sftpPartners.length > 0) {
-    const intervalMins = Math.max(1, Math.round(config.sftp.pollIntervalMs / 60000));
     for (const partner of sftpPartners) {
       try {
+        const intervalMs = partner.sftp_poll_interval_ms ?? config.sftp.pollIntervalMs;
+        const intervalMins = Math.max(1, Math.round(intervalMs / 60000));
         const poller = await startPartnerPoller(partner, fn => {
           schedule.scheduleJob(`*/${intervalMins} * * * *`, fn);
         });
