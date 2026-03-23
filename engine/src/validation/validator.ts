@@ -1,9 +1,28 @@
+import axios from 'axios';
 import pino from 'pino';
 import type { ParsedEDI, JediTransaction } from '../types/jedi';
 
 const logger = pino({ name: 'validator' });
+const OPS_URL = process.env.OPS_PLATFORM_URL ?? 'http://localhost:8000';
 
-const KNOWN_SENDER_IDS = new Set(['EFWW', 'FOAA', 'FAFS']);
+/**
+ * Fetch active partner IDs from Django. Returns the list on success, or null
+ * if Django is unreachable — callers should skip the sender check when null.
+ */
+export async function fetchKnownPartnerIds(): Promise<string[] | null> {
+  try {
+    const res = await axios.get<{ partners: { partner_id: string }[] }>(
+      `${OPS_URL}/api/partners/`,
+      { timeout: 5_000 },
+    );
+    const ids = (res.data.partners ?? []).map(p => p.partner_id);
+    logger.debug({ partnerIds: ids }, 'Fetched known partner IDs from Django');
+    return ids;
+  } catch (err: unknown) {
+    logger.warn({ err: (err as Error).message }, 'Partner lookup failed — skipping UNKNOWN_SENDER_ID check');
+    return null;
+  }
+}
 
 export interface ValidationResult {
   valid: boolean;
@@ -30,7 +49,7 @@ export interface RedisClient {
 
 // ─── Level 1: Envelope ───────────────────────────────────────────────────────
 
-export function validateEnvelope(parsed: ParsedEDI): ValidationResult {
+export function validateEnvelope(parsed: ParsedEDI, knownPartnerIds?: string[] | null): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: ValidationWarning[] = [];
 
@@ -70,7 +89,10 @@ export function validateEnvelope(parsed: ParsedEDI): ValidationResult {
       segment: 'ISA',
       field: 'interchange_sender_id_06',
     });
-  } else if (!KNOWN_SENDER_IDS.has(senderId)) {
+  } else if (
+    knownPartnerIds != null &&
+    !knownPartnerIds.some(id => id.trim().toLowerCase() === senderId.trim().toLowerCase())
+  ) {
     warnings.push({
       code: 'UNKNOWN_SENDER_ID',
       message: `Sender ID "${senderId}" is not in the known partner list`,
@@ -259,8 +281,11 @@ export async function validateFull(parsed: ParsedEDI, redis?: RedisClient): Prom
   const errors: ValidationError[] = [];
   const warnings: ValidationWarning[] = [];
 
+  // Fetch known partner IDs for sender validation (null = skip check)
+  const knownPartnerIds = await fetchKnownPartnerIds();
+
   // Level 1: Envelope
-  const envelopeResult = validateEnvelope(parsed);
+  const envelopeResult = validateEnvelope(parsed, knownPartnerIds);
   errors.push(...envelopeResult.errors);
   warnings.push(...envelopeResult.warnings);
 

@@ -1,11 +1,15 @@
+jest.mock('axios');
+
 import {
   validateEnvelope,
   validateSchema,
   validateBusinessRules,
   checkDuplicate,
   validateFull,
+  fetchKnownPartnerIds,
   type RedisClient,
 } from '../../src/validation/validator';
+import axios from 'axios';
 import type { ParsedEDI, JediTransaction } from '../../src/types/jedi';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -170,10 +174,22 @@ describe('validateEnvelope', () => {
 
   test('unknown sender ID produces UNKNOWN_SENDER_ID warning, not error', () => {
     const parsed = makeParsedEDI('204', makeValid204(), { senderId: 'UNKN' });
-    const result = validateEnvelope(parsed);
+    const result = validateEnvelope(parsed, ['EFWW', 'FOAA', 'FAFS']);
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
     expect(result.warnings.some(w => w.code === 'UNKNOWN_SENDER_ID')).toBe(true);
+  });
+
+  test('UNKNOWN_SENDER_ID check is skipped when knownPartnerIds is null', () => {
+    const parsed = makeParsedEDI('204', makeValid204(), { senderId: 'UNKN' });
+    const result = validateEnvelope(parsed, null);
+    expect(result.warnings.some(w => w.code === 'UNKNOWN_SENDER_ID')).toBe(false);
+  });
+
+  test('sender ID comparison is case-insensitive and trims whitespace', () => {
+    const parsed = makeParsedEDI('204', makeValid204(), { senderId: ' efww ' });
+    const result = validateEnvelope(parsed, ['EFWW']);
+    expect(result.warnings.some(w => w.code === 'UNKNOWN_SENDER_ID')).toBe(false);
   });
 
   test('stale interchange date produces STALE_INTERCHANGE_DATE warning', () => {
@@ -323,7 +339,29 @@ describe('checkDuplicate', () => {
 
 // ─── Full pipeline ────────────────────────────────────────────────────────────
 
+describe('fetchKnownPartnerIds', () => {
+  test('returns partner_id list on success', async () => {
+    (axios.get as jest.Mock).mockResolvedValueOnce({
+      data: { partners: [{ partner_id: 'EFWW' }, { partner_id: 'FOAA' }] },
+    });
+    const ids = await fetchKnownPartnerIds();
+    expect(ids).toEqual(['EFWW', 'FOAA']);
+  });
+
+  test('returns null when Django is unreachable', async () => {
+    (axios.get as jest.Mock).mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const ids = await fetchKnownPartnerIds();
+    expect(ids).toBeNull();
+  });
+});
+
 describe('validateFull', () => {
+  beforeEach(() => {
+    // Return the test sender so envelope validation sees it as a known partner
+    (axios.get as jest.Mock).mockResolvedValue({
+      data: { partners: [{ partner_id: 'EFWW' }] },
+    });
+  });
   test('valid 204 passes all three levels', async () => {
     const parsed = makeParsedEDI('204', makeValid204());
     const result = await validateFull(parsed);
