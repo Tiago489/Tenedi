@@ -258,10 +258,16 @@ class GenerateWithAIView(APIView):
 
 
 def _build_ai_prompt(stedi_mapping: str, examples: list, tx_set: str) -> str:
+    from services.standard_fields import standard_fields_prompt
+
     prompt = (
         f'You are an EDI mapping expert. Generate DSL field mappings for '
         f'transaction set {tx_set}.\n\n'
     )
+
+    # Always include standard field requirements for 204 inbound
+    if tx_set == '204':
+        prompt += f'## Required Standard Fields\n{standard_fields_prompt()}\n\n'
 
     if stedi_mapping:
         prompt += f'## Stedi Mapping Reference\n```json\n{stedi_mapping[:5000]}\n```\n\n'
