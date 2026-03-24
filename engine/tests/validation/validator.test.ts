@@ -394,4 +394,117 @@ describe('validateFull', () => {
     expect(result.valid).toBe(false);
     expect(result.errors.some(e => e.code === 'MISSING_REQUIRED_SEGMENT' && e.segment === 'B2A')).toBe(true);
   });
+
+  test('SKIP_DUPLICATE_CHECK=true bypasses duplicate detection', async () => {
+    const original = process.env.SKIP_DUPLICATE_CHECK;
+    process.env.SKIP_DUPLICATE_CHECK = 'true';
+    try {
+      const parsed = makeParsedEDI('204', makeValid204());
+      const redis = makeMockRedis(new Set(['edi:processed:EFWW:000000001']));
+      const result = await validateFull(parsed, redis);
+      // Should NOT have DUPLICATE_INTERCHANGE even though the key exists
+      expect(result.errors.some(e => e.code === 'DUPLICATE_INTERCHANGE')).toBe(false);
+    } finally {
+      if (original === undefined) {
+        delete process.env.SKIP_DUPLICATE_CHECK;
+      } else {
+        process.env.SKIP_DUPLICATE_CHECK = original;
+      }
+    }
+  });
+
+  test('SKIP_DUPLICATE_CHECK unset allows duplicate detection', async () => {
+    const original = process.env.SKIP_DUPLICATE_CHECK;
+    delete process.env.SKIP_DUPLICATE_CHECK;
+    try {
+      const parsed = makeParsedEDI('204', makeValid204());
+      const redis = makeMockRedis(new Set(['edi:processed:EFWW:000000001']));
+      const result = await validateFull(parsed, redis);
+      expect(result.errors.some(e => e.code === 'DUPLICATE_INTERCHANGE')).toBe(true);
+    } finally {
+      if (original !== undefined) {
+        process.env.SKIP_DUPLICATE_CHECK = original;
+      }
+    }
+  });
+});
+
+// ─── Additional branch coverage ──────────────────────────────────────────────
+
+describe('validateSchema — additional branches', () => {
+  test('204 missing B2 segment fails with MISSING_REQUIRED_SEGMENT', () => {
+    const tx = makeTransaction('204', {
+      // b2 intentionally omitted
+      b2a: { b2a_element_01: '00' },
+    }, { s5_loop: [{ s5: {} }] });
+    const result = validateSchema(tx, '204');
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.code === 'MISSING_REQUIRED_SEGMENT' && e.segment === 'B2')).toBe(true);
+  });
+
+  test('211 missing N1 loop fails with MISSING_REQUIRED_LOOP', () => {
+    const tx = makeTransaction('211', {
+      bol: { bol_element_01: 'EFWW' },
+      b2a: { b2a_element_01: '00' },
+      // n1_loop intentionally omitted
+    });
+    const result = validateSchema(tx, '211');
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.code === 'MISSING_REQUIRED_LOOP' && e.segment === 'N1')).toBe(true);
+  });
+
+  test('outbound transaction sets (210, 214, 990) skip schema validation', () => {
+    for (const txSet of ['210', '214', '990']) {
+      const tx = makeTransaction(txSet, {});
+      const result = validateSchema(tx, txSet);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+      expect(result.warnings).toHaveLength(0);
+    }
+  });
+});
+
+describe('validateBusinessRules — additional branches', () => {
+  test('204 with SCAC too short (1 char) fails with INVALID_SCAC_LENGTH', () => {
+    const tx = makeTransaction('204', {
+      b2: { b2_element_02: 'F' },
+      b2a: { b2a_element_01: '00' },
+    }, { s5_loop: [{ s5: {} }] });
+    const result = validateBusinessRules(tx, '204');
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.code === 'INVALID_SCAC_LENGTH')).toBe(true);
+  });
+
+  test('non-204/211 transaction set skips SCAC validation', () => {
+    const tx = makeTransaction('997', {});
+    const result = validateBusinessRules(tx, '997');
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+});
+
+describe('validateEnvelope — SE segment count mismatch', () => {
+  test('SE count mismatch produces ENVELOPE_SEGMENT_COUNT_MISMATCH', () => {
+    // Create a transaction with 3 raw segments but SE declares 99
+    const tx: JediTransaction = {
+      transaction_set_header_ST: {
+        transaction_set_identifier_code_01: '204',
+        transaction_set_control_number_02: '0001',
+      },
+      transaction_set_trailer_SE: {
+        number_of_included_segments_01: '99', // wrong — should be 5 (3 raw + ST + SE)
+        transaction_set_control_number_02: '0001',
+      },
+      _raw: [
+        { tag: 'B2', elements: [], loopId: undefined },
+        { tag: 'B2A', elements: [], loopId: undefined },
+        { tag: 'S5', elements: [], loopId: undefined },
+      ],
+      heading: { b2: { b2_element_02: 'EFWW' }, b2a: { b2a_element_01: '00' } },
+      detail: { s5_loop: [{ s5: {} }] },
+    };
+    const parsed = makeParsedEDI('204', tx);
+    const result = validateEnvelope(parsed);
+    expect(result.errors.some(e => e.code === 'ENVELOPE_SEGMENT_COUNT_MISMATCH')).toBe(true);
+  });
 });

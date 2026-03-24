@@ -1,0 +1,9 @@
+{
+  "name": "[CEVA-IBM for Sierra Airfreight] 204 Inbound",
+  "type": "only_mapped_keys",
+  "mapping": "{ \"senderId\": $$.envelope.interchangeHeader.senderId, \"standardCarrierAlphaCode\": $$.transactionSets[0].heading.beginning_segment_for_shipment_information_transaction_B2.standard_carrier_alpha_code_02, \"transactionSetPurposeCode\": $lookupTable($tables.PURPOSE_CODES, \"Key\", $$.transactionSets[0].heading.set_purpose_B2A.transaction_set_purpose_code_01).Value, \"isLineHaul\": false, \"pickupOrDelivery\": \"PICKUP_AND_DELIVERY\", \"mawb\": $$.transactionSets[0].heading.beginning_segment_for_shipment_information_transaction_B2.standard_carrier_alpha_code_02 = \"FBTC\" ? $$.transactionSets[0].detail.stop_off_details_S5_loop[0].lading_detail_LAD[0].lading_description_13 : $$.transactionSets[0].detail.stop_off_details_S5_loop[0].order_identification_detail_OID_loop[0].order_identification_detail_OID.purchase_order_number_02, \"deadlineDate\": $$.transactionSets[0].detail.stop_off_details_S5_loop[0].date_time_G62[date_qualifier_01 = \"69\"].date_02, \"paymentMethod\": $lookupTable($tables.PAYMENT_CODES, \"Key\", $$.transactionSets[0].heading.beginning_segment_for_shipment_information_transaction_B2.shipment_method_of_payment_06).Value, \"shipperName\": $$.transactionSets[0].detail.stop_off_details_S5_loop[0].name_N1_loop[0].name_N1.name_02 }",
+  "lookup_tables": [
+    { "name": "PURPOSE_CODES", "values": [{"Key":"00","Value":"ORIGINAL"},{"Key":"01","Value":"CANCELLATION"},{"Key":"04","Value":"CHANGE"}] },
+    { "name": "PAYMENT_CODES", "values": [{"Key":"PP","Value":"PREPAID_BY_SELLER"},{"Key":"CC","Value":"COLLECT"},{"Key":"NC","Value":"SERVICE_FREIGHT_NO_CHARGES"},{"Key":"TP","Value":"THIRD_PARTY_PAY"}] }
+  ]
+}
