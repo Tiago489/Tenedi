@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.conf import settings
 from django.utils.html import format_html
 from .models import TradingPartner, SFTPLog
-from apps.maps.models import TransformMap
+from apps.maps.models import TransformMap, MappingExample
 
 
 def test_sftp_connection(modeladmin, request, queryset):
@@ -90,14 +90,38 @@ class TransformMapInline(admin.TabularInline):
         return format_html('<a href="{}">Open full editor &rarr;</a>', url)
 
 
+class MappingExampleInline(admin.TabularInline):
+    """Inline view of mapping examples owned by this trading partner."""
+    model = MappingExample
+    fk_name = 'trading_partner'
+    extra = 0
+    fields = ('display_label', 'transaction_set', 'direction', 'is_validated', 'created_at', 'edit_link')
+    readonly_fields = ('display_label', 'created_at', 'edit_link')
+    show_change_link = True
+
+    @admin.display(description='Label')
+    def display_label(self, obj):
+        if not obj.pk:
+            return '—'
+        return obj.auto_label or obj.example_label or obj.content_hash[:8]
+
+    @admin.display(description='Edit')
+    def edit_link(self, obj):
+        if not obj.pk:
+            return '—'
+        from django.urls import reverse
+        url = reverse('admin:maps_mappingexample_change', args=[obj.pk])
+        return format_html('<a href="{}">Open &rarr;</a>', url)
+
+
 @admin.register(TradingPartner)
 class TradingPartnerAdmin(admin.ModelAdmin):
-    list_display = ('name', 'partner_id', 'transport', 'is_active', 'map_count', 'created_at')
+    list_display = ('name', 'partner_id', 'transport', 'is_active', 'map_count', 'example_count', 'created_at')
     list_filter = ('transport', 'is_active')
     search_fields = ('name', 'partner_id', 'as2_id')
     readonly_fields = ('created_at', 'updated_at')
     actions = [test_sftp_connection, pull_now]
-    inlines = [TransformMapInline]
+    inlines = [TransformMapInline, MappingExampleInline]
 
     fieldsets = (
         ('General', {
@@ -128,6 +152,13 @@ class TradingPartnerAdmin(admin.ModelAdmin):
     @admin.display(description='Maps')
     def map_count(self, obj):
         count = obj.transform_maps.count()
+        if count == 0:
+            return '—'
+        return count
+
+    @admin.display(description='Examples')
+    def example_count(self, obj):
+        count = obj.mapping_examples.count()
         if count == 0:
             return '—'
         return count

@@ -1,9 +1,11 @@
+import json
 from django.contrib import admin
 from django.contrib import messages
 from django.utils import timezone
 from django.utils.html import format_html
 from .models import ReferenceTable, JediSampleFixture, TransformMap, DSLKeywordRequest, DSLExample, MappingExample
 from services.engine_client import EngineClient
+from services.stedi_converter import convert as convert_stedi
 
 
 @admin.register(ReferenceTable)
@@ -69,25 +71,50 @@ def compile_and_publish(modeladmin, request, queryset):
 compile_and_publish.short_description = 'Compile & Publish selected maps'
 
 
+def convert_stedi_mapping(modeladmin, request, queryset):
+    """Admin action: convert uploaded Stedi mapping.json to DSL preview."""
+    for transform_map in queryset:
+        if not transform_map.stedi_mapping_json:
+            messages.warning(request, f'{transform_map}: No Stedi mapping.json uploaded — skipping')
+            continue
+
+        result = convert_stedi(transform_map.stedi_mapping_json)
+        transform_map.stedi_conversion_preview = result.dsl
+        transform_map.stedi_conversion_notes = result.notes
+        if result.needs_custom_transform:
+            transform_map.stedi_conversion_notes += '\n\n⚠ NEEDS CUSTOM TRANSFORM — human review required'
+        transform_map.save(update_fields=['stedi_conversion_preview', 'stedi_conversion_notes'])
+
+        messages.success(request, f'{transform_map}: Converted — {result.fields_mapped} fields mapped')
+
+
+convert_stedi_mapping.short_description = 'Convert Stedi mapping.json to DSL'
+
+
 @admin.register(TransformMap)
 class TransformMapAdmin(admin.ModelAdmin):
     """Top-level audit view for all transform maps across partners."""
-    list_display = ('partner_link', 'transaction_set', 'direction', 'display_map_type', 'is_live', 'published_at')
+    list_display = ('partner_link', 'transaction_set', 'direction', 'display_map_type', 'is_live', 'has_stedi', 'published_at')
     list_filter = ('direction', 'is_live', 'transaction_set', 'partner')
     search_fields = ('transaction_set', 'dsl_source', 'custom_transform_id')
     readonly_fields = (
         'version', 'compiled_jsonata', 'validation_result',
         'published_at', 'published_by', 'created_at', 'display_map_type',
+        'stedi_conversion_preview', 'stedi_conversion_notes',
     )
-    actions = [compile_and_publish]
+    actions = [compile_and_publish, convert_stedi_mapping]
 
     fieldsets = (
         ('Partner & Identity', {
             'fields': ('partner', 'transaction_set', 'direction', 'display_map_type', 'custom_transform_id'),
         }),
+        ('Import from Stedi', {
+            'classes': ('collapse',),
+            'fields': ('stedi_mapping_json', 'stedi_conversion_notes', 'stedi_conversion_preview'),
+        }),
         ('DSL Source', {
+            'classes': ('collapse',),
             'fields': ('dsl_source',),
-            'classes': ('collapse',) if True else (),
         }),
         ('Compiled Output', {
             'classes': ('collapse',),
@@ -109,6 +136,20 @@ class TransformMapAdmin(admin.ModelAdmin):
             url = reverse('admin:partners_tradingpartner_change', args=[obj.partner.pk])
             return format_html('<a href="{}">{}</a>', url, obj.partner)
         return '—'
+
+    @admin.display(description='Stedi', boolean=True)
+    def has_stedi(self, obj):
+        return bool(obj.stedi_mapping_json)
+
+    def save_model(self, request, obj, form, change):
+        # Auto-convert Stedi mapping on save if uploaded and no DSL yet
+        if obj.stedi_mapping_json and not obj.stedi_conversion_preview:
+            result = convert_stedi(obj.stedi_mapping_json)
+            obj.stedi_conversion_preview = result.dsl
+            obj.stedi_conversion_notes = result.notes
+            if result.needs_custom_transform:
+                obj.stedi_conversion_notes += '\n\n⚠ NEEDS CUSTOM TRANSFORM — human review required'
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(DSLKeywordRequest)
@@ -139,37 +180,40 @@ class DSLExampleAdmin(admin.ModelAdmin):
 
 @admin.register(MappingExample)
 class MappingExampleAdmin(admin.ModelAdmin):
-    list_display = ('transaction_set', 'direction', 'trading_partner', 'short_hash', 'is_validated', 'created_at')
+    list_display = ('display_label', 'transaction_set', 'direction', 'trading_partner', 'is_validated', 'created_at')
     list_filter = ('transaction_set', 'direction', 'is_validated', 'trading_partner')
-    search_fields = ('transaction_set', 'content_hash')
-    readonly_fields = ('content_hash', 'raw_edi', 'jedi_output', 'system_json_output', 'created_at')
+    search_fields = ('transaction_set', 'content_hash', 'example_label', 'auto_label')
+    readonly_fields = ('auto_label', 'content_hash', 'jedi_output', 'system_json_output', 'created_at')
     actions = ['mark_validated', 'mark_unvalidated']
 
     fieldsets = (
         ('Classification', {
-            'fields': ('transaction_set', 'direction', 'trading_partner', 'is_validated', 'content_hash', 'created_at'),
+            'fields': (
+                'trading_partner', 'transaction_set', 'direction',
+                'example_label', 'auto_label',
+                'is_validated', 'content_hash', 'created_at',
+            ),
         }),
-        ('DSL Source (edit to fill in the mapping)', {
-            'fields': ('dsl_source',),
-            'classes': ('wide',),
-        }),
-        ('Raw EDI', {
+        ('Input: Raw EDI', {
             'fields': ('raw_edi',),
-            'classes': ('collapse',),
         }),
-        ('JEDI Output', {
-            'fields': ('jedi_output',),
-            'classes': ('collapse',),
+        ('Input: Target System JSON', {
+            'fields': ('target_json',),
+            'description': 'Paste the expected systemJson output (from Stedi target-document.json)',
         }),
-        ('System JSON Output', {
-            'fields': ('system_json_output',),
+        ('Auto-Parsed Outputs', {
+            'classes': ('collapse',),
+            'fields': ('jedi_output', 'system_json_output'),
+        }),
+        ('DSL Source (manual)', {
+            'fields': ('dsl_source',),
             'classes': ('collapse',),
         }),
     )
 
-    @admin.display(description='Hash')
-    def short_hash(self, obj):
-        return obj.content_hash[:8]
+    @admin.display(description='Label')
+    def display_label(self, obj):
+        return obj.auto_label or obj.example_label or obj.content_hash[:8]
 
     @admin.action(description='Mark selected as validated')
     def mark_validated(self, request, queryset):

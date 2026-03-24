@@ -1,3 +1,4 @@
+import hashlib
 from django.db import models
 from django.conf import settings
 
@@ -56,6 +57,20 @@ class TransformMap(models.Model):
         related_name='published_maps',
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Stedi import fields
+    stedi_mapping_json = models.TextField(
+        blank=True,
+        help_text='Raw Stedi mapping.json content — uploaded to auto-generate DSL or custom transform',
+    )
+    stedi_conversion_preview = models.TextField(
+        blank=True,
+        help_text='Preview of the converted DSL before publishing',
+    )
+    stedi_conversion_notes = models.TextField(
+        blank=True,
+        help_text='Notes from conversion: fields mapped, fallbacks used, custom transform flags',
+    )
 
     class Meta:
         db_table = 'maps_transform_map'
@@ -121,11 +136,23 @@ class MappingExample(models.Model):
         on_delete=models.SET_NULL,
         related_name='mapping_examples',
     )
-    raw_edi = models.TextField()
-    jedi_output = models.JSONField()
-    system_json_output = models.JSONField()
+    example_label = models.CharField(
+        max_length=100, blank=True,
+        help_text='Human label e.g. "fixture-01-fbtc"',
+    )
+    auto_label = models.CharField(
+        max_length=100, blank=True,
+        help_text='Auto-generated label: {PARTNER_ID}-{TX_SET}-{N:03d}',
+    )
+    raw_edi = models.TextField(blank=True)
+    target_json = models.JSONField(
+        null=True, blank=True,
+        help_text='Target systemJson output (Stedi target-document.json)',
+    )
+    jedi_output = models.JSONField(null=True, blank=True)
+    system_json_output = models.JSONField(null=True, blank=True)
     dsl_source = models.TextField(blank=True)  # filled in after human review
-    content_hash = models.CharField(max_length=64, unique=True)  # SHA1 of raw_edi, for dedup
+    content_hash = models.CharField(max_length=64, unique=True)
     is_validated = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -134,4 +161,20 @@ class MappingExample(models.Model):
         ordering = ['-created_at']
 
     def __str__(self) -> str:
-        return f'MappingExample({self.transaction_set}, {self.content_hash[:8]})'
+        label = self.auto_label or self.example_label or self.content_hash[:8]
+        return f'MappingExample({self.transaction_set}, {label})'
+
+    def save(self, *args, **kwargs):
+        # Auto-generate content_hash if missing
+        if not self.content_hash and self.raw_edi:
+            self.content_hash = hashlib.sha1(self.raw_edi.encode()).hexdigest()
+
+        # Auto-generate label
+        if not self.auto_label and self.trading_partner and self.transaction_set:
+            existing = MappingExample.objects.filter(
+                trading_partner=self.trading_partner,
+                transaction_set=self.transaction_set,
+            ).exclude(pk=self.pk).count()
+            self.auto_label = f'{self.trading_partner.partner_id}-{self.transaction_set}-{existing + 1:03d}'
+
+        super().save(*args, **kwargs)

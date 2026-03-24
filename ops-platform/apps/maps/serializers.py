@@ -9,6 +9,7 @@ class TransformMapSerializer(serializers.ModelSerializer):
         read_only_fields = (
             'version', 'compiled_jsonata', 'validation_result',
             'published_at', 'published_by', 'created_at',
+            'stedi_conversion_preview', 'stedi_conversion_notes',
         )
 
 
@@ -30,7 +31,8 @@ class MappingExampleSerializer(serializers.ModelSerializer):
         model = MappingExample
         fields = [
             'id', 'transaction_set', 'direction', 'trading_partner',
-            'raw_edi', 'jedi_output', 'system_json_output',
+            'example_label', 'auto_label',
+            'raw_edi', 'target_json', 'jedi_output', 'system_json_output',
             'dsl_source', 'content_hash', 'is_validated', 'created_at',
         ]
-        read_only_fields = ('id', 'created_at')
+        read_only_fields = ('id', 'auto_label', 'created_at')
