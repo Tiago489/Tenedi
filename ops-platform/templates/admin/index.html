@@ -1,0 +1,289 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}{{ title }} | {{ site_title }}{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+  .health-card { min-height: 140px; transition: border-color 0.3s; }
+  .health-card.border-ok { border-left: 4px solid #28a745 !important; }
+  .health-card.border-warn { border-left: 4px solid #ffc107 !important; }
+  .health-card.border-err { border-left: 4px solid #dc3545 !important; }
+  .metric-big { font-size: 2rem; font-weight: 700; line-height: 1; }
+  .metric-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; }
+  #partner-table th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .pulse { animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ═══ Row 1: System Health ═══ -->
+<div class="row">
+  <div class="col-lg-3 col-sm-6 mb-3">
+    <div class="card health-card" id="card-engine">
+      <div class="card-body text-center">
+        <i class="fas fa-server fa-2x mb-2 text-muted" id="icon-engine"></i>
+        <h6 class="text-muted">Engine</h6>
+        <span class="badge badge-secondary pulse" id="badge-engine">Checking...</span>
+        <small class="d-block mt-1 text-muted" id="latency-engine"></small>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-3 col-sm-6 mb-3">
+    <div class="card health-card" id="card-redis">
+      <div class="card-body text-center">
+        <i class="fas fa-database fa-2x mb-2 text-muted"></i>
+        <h6 class="text-muted">Redis Queue</h6>
+        <span class="badge badge-secondary pulse" id="badge-redis">Checking...</span>
+        <small class="d-block mt-1 text-muted" id="queue-depth"></small>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-3 col-sm-6 mb-3">
+    <div class="card health-card" id="card-database">
+      <div class="card-body text-center">
+        <i class="fas fa-hdd fa-2x mb-2 text-muted"></i>
+        <h6 class="text-muted">Database</h6>
+        <span class="badge badge-secondary pulse" id="badge-database">Checking...</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-3 col-sm-6 mb-3">
+    <div class="card health-card" id="card-sftp">
+      <div class="card-body text-center">
+        <i class="fas fa-plug fa-2x mb-2 text-muted"></i>
+        <h6 class="text-muted">SFTP Connectors</h6>
+        <span id="sftp-summary" class="pulse">Checking...</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Row 2: Pipeline Charts ═══ -->
+<div class="row">
+  <div class="col-lg-8 mb-3">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0"><i class="fas fa-chart-bar mr-2"></i>Pipeline Activity &mdash; Last 24 Hours</h6></div>
+      <div class="card-body"><canvas id="chart-hourly" height="100"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-4 mb-3">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0"><i class="fas fa-chart-pie mr-2"></i>Transaction Sets</h6></div>
+      <div class="card-body"><canvas id="chart-txsets" height="180"></canvas></div>
+      <div class="card-footer text-center">
+        <span class="metric-big" id="total-24h">--</span>
+        <span class="metric-label d-block">files in last 24h</span>
+        <span class="text-success mt-1 d-block" id="success-rate"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Row 3: Trading Partner Status ═══ -->
+<div class="row">
+  <div class="col-12 mb-3">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0"><i class="fas fa-handshake mr-2"></i>Trading Partner Status</h6></div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0" id="partner-table">
+          <thead><tr>
+            <th>Partner</th><th>Last File</th><th>Today</th><th>This Week</th><th>Last Delivery</th><th>SFTP</th>
+          </tr></thead>
+          <tbody id="partner-tbody">
+            <tr><td colspan="6" class="text-center text-muted p-3 pulse">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Row 4: Recent Failures ═══ -->
+<div class="row">
+  <div class="col-12 mb-3">
+    <div class="card" id="failures-card">
+      <div class="card-header">
+        <h6 class="mb-0">
+          <i class="fas fa-exclamation-triangle mr-2"></i>Recent Failures
+          <span class="badge badge-light ml-2" id="failure-count">0</span>
+        </h6>
+      </div>
+      <div class="card-body p-0" id="failures-body">
+        <p class="p-3 text-success mb-0"><i class="fas fa-check-circle mr-2"></i>No recent failures</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extrajs %}
+{{ block.super }}
+<script>
+(function() {
+  let hourlyChart = null;
+  let txsetChart = null;
+
+  function badge(status) {
+    if (status === 'healthy' || status === 'connected') return 'badge-success';
+    if (status === 'degraded' || status === 'stale') return 'badge-warning';
+    return 'badge-danger';
+  }
+  function border(status) {
+    if (status === 'healthy') return 'border-ok';
+    if (status === 'degraded') return 'border-warn';
+    return 'border-err';
+  }
+
+  function renderHealth(sys) {
+    ['engine', 'redis', 'database'].forEach(function(k) {
+      var s = sys[k].status;
+      var b = document.getElementById('badge-' + k);
+      b.textContent = s === 'healthy' ? '\u25cf Healthy' : '\u25cf ' + s.charAt(0).toUpperCase() + s.slice(1);
+      b.className = 'badge ' + badge(s);
+      b.classList.remove('pulse');
+      var card = document.getElementById('card-' + k);
+      card.className = 'card health-card ' + border(s);
+    });
+    if (sys.engine.latency_ms != null) {
+      document.getElementById('latency-engine').textContent = sys.engine.latency_ms + 'ms';
+    }
+    document.getElementById('queue-depth').textContent = sys.redis.queue_depth + ' jobs queued';
+
+    var sftp = sys.sftp_connectors;
+    var sfEl = document.getElementById('sftp-summary');
+    sfEl.classList.remove('pulse');
+    if (sftp.total === 0) {
+      sfEl.textContent = 'No SFTP partners';
+    } else {
+      sfEl.innerHTML = '<span class="text-success">' + sftp.active + ' active</span>' +
+        (sftp.failed > 0 ? ' <span class="text-danger ml-2">' + sftp.failed + ' failed</span>' : '');
+    }
+    var sftpCard = document.getElementById('card-sftp');
+    sftpCard.className = 'card health-card ' + (sftp.failed > 0 ? 'border-warn' : (sftp.total > 0 ? 'border-ok' : ''));
+  }
+
+  function renderHourly(byHour) {
+    var labels = byHour.map(function(h) { return new Date(h.hour).getHours() + ':00'; });
+    var ok = byHour.map(function(h) { return h.count - h.failed; });
+    var fail = byHour.map(function(h) { return h.failed; });
+    if (hourlyChart) hourlyChart.destroy();
+    hourlyChart = new Chart(document.getElementById('chart-hourly'), {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Successful', data: ok, backgroundColor: 'rgba(40,167,69,0.8)' },
+          { label: 'Failed', data: fail, backgroundColor: 'rgba(220,53,69,0.8)' }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true, position: 'top' } },
+        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+      }
+    });
+  }
+
+  function renderTxSet(byTx) {
+    var colors = { '204':'#007bff','211':'#28a745','990':'#ffc107','214':'#17a2b8','210':'#6f42c1','997':'#6c757d' };
+    var keys = Object.keys(byTx);
+    if (txsetChart) txsetChart.destroy();
+    if (keys.length === 0) return;
+    txsetChart = new Chart(document.getElementById('chart-txsets'), {
+      type: 'doughnut',
+      data: {
+        labels: keys,
+        datasets: [{ data: keys.map(function(k){return byTx[k];}), backgroundColor: keys.map(function(k){return colors[k]||'#adb5bd';}) }]
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    });
+  }
+
+  function renderPartners(partners) {
+    var tbody = document.getElementById('partner-tbody');
+    if (!partners.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-3">No active partners</td></tr>';
+      return;
+    }
+    tbody.innerHTML = partners.map(function(p) {
+      var dBadge = '';
+      if (p.last_delivery_status >= 200 && p.last_delivery_status < 300) {
+        dBadge = '<span class="badge badge-success">' + p.last_delivery_status + '</span>';
+      } else if (p.last_delivery_status) {
+        dBadge = '<span class="badge badge-danger">' + p.last_delivery_status + '</span>';
+      } else {
+        dBadge = '<span class="badge badge-secondary">&mdash;</span>';
+      }
+      var sBadge = p.sftp_status === 'connected'
+        ? '<span class="badge badge-success">Connected</span>'
+        : p.sftp_status === 'n/a'
+          ? '<span class="badge badge-secondary">N/A</span>'
+          : '<span class="badge badge-warning">' + p.sftp_status + '</span>';
+      var lastFile = p.last_file_received ? new Date(p.last_file_received).toLocaleString() : 'Never';
+      return '<tr>' +
+        '<td><strong>' + p.name + '</strong><br><small class="text-muted">' + p.partner_id + '</small></td>' +
+        '<td>' + lastFile + '</td>' +
+        '<td>' + p.files_today + '</td>' +
+        '<td>' + p.files_this_week + '</td>' +
+        '<td>' + dBadge + '</td>' +
+        '<td>' + sBadge + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function renderFailures(failures) {
+    var body = document.getElementById('failures-body');
+    var cnt = document.getElementById('failure-count');
+    var card = document.getElementById('failures-card');
+    cnt.textContent = failures.length;
+    if (!failures.length) {
+      body.innerHTML = '<p class="p-3 text-success mb-0"><i class="fas fa-check-circle mr-2"></i>No recent failures</p>';
+      card.className = 'card';
+      return;
+    }
+    card.className = 'card border-danger';
+    body.innerHTML = '<table class="table table-sm mb-0"><thead><tr>' +
+      '<th>Partner</th><th>TX Set</th><th>Error</th><th>Time</th><th></th></tr></thead><tbody>' +
+      failures.map(function(f) {
+        return '<tr>' +
+          '<td>' + f.partner + '</td>' +
+          '<td><span class="badge badge-secondary">' + f.transaction_set + '</span></td>' +
+          '<td class="text-danger" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + f.error + '</td>' +
+          '<td><small>' + new Date(f.created_at).toLocaleString() + '</small></td>' +
+          '<td><a href="' + f.admin_url + '" class="btn btn-xs btn-outline-primary">View</a></td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function renderStats(pipeline) {
+    document.getElementById('total-24h').textContent = pipeline.total;
+    var rate = pipeline.total > 0 ? Math.round((pipeline.successful / pipeline.total) * 100) : 100;
+    document.getElementById('success-rate').textContent = rate + '% success rate';
+  }
+
+  function loadDashboard() {
+    fetch('/api/dashboard/metrics/')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        renderHealth(data.system);
+        renderHourly(data.pipeline_24h.by_hour);
+        renderTxSet(data.pipeline_24h.by_transaction_set);
+        renderStats(data.pipeline_24h);
+        renderPartners(data.partners);
+        renderFailures(data.recent_failures);
+      })
+      .catch(function(err) {
+        console.error('Dashboard fetch failed:', err);
+      });
+  }
+
+  loadDashboard();
+  setInterval(loadDashboard, 30000);
+})();
+</script>
+{% endblock %}
