@@ -27,10 +27,18 @@ export interface RecordJobOptions {
   error_message?: string;
   validation_errors?: ValidationError[];
   validation_warnings?: ValidationWarning[];
+  downstream_status_code?: number;
+  downstream_response?: string;
+  downstream_delivered_at?: string;
+  downstream_error?: string;
 }
 
 export async function recordJobInOps(opts: RecordJobOptions): Promise<void> {
-  const { job, txSet, partnerId, status = 'completed', error_message, validation_errors, validation_warnings } = opts;
+  const {
+    job, txSet, partnerId, status = 'completed',
+    error_message, validation_errors, validation_warnings,
+    downstream_status_code, downstream_response, downstream_delivered_at, downstream_error,
+  } = opts;
   try {
     await axios.post(`${OPS_URL}/api/jobs/`, {
       job_id: job.id,
@@ -46,6 +54,10 @@ export async function recordJobInOps(opts: RecordJobOptions): Promise<void> {
       ...(error_message !== undefined ? { error_message } : {}),
       ...(validation_errors !== undefined ? { validation_errors } : {}),
       ...(validation_warnings !== undefined ? { validation_warnings } : {}),
+      ...(downstream_status_code !== undefined ? { downstream_status_code } : {}),
+      ...(downstream_response !== undefined ? { downstream_response } : {}),
+      ...(downstream_delivered_at !== undefined ? { downstream_delivered_at } : {}),
+      ...(downstream_error !== undefined ? { downstream_error } : {}),
     }, { timeout: 5_000 });
   } catch (err: unknown) {
     logger.warn({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to record job in ops platform — continuing');
@@ -141,27 +153,51 @@ const worker = new Worker(
             }
           }
 
-          if (partner?.downstream_api_url) {
-            // Use partner-specific routing
-            await axios.post(partner.downstream_api_url, systemJson, {
-              headers: {
-                Authorization: `Bearer ${partner.downstream_api_key}`,
-                'Content-Type': 'application/json',
-              },
-              timeout: 30_000,
-            });
-            logger.info({ jobId: job.id, txSet, endpoint: partner.downstream_api_url }, 'Delivered via partner routing');
-          } else {
-            // Fall back to static routing rules
-            await deliverToAPI(txSet, systemJson);
+          let downstreamStatusCode: number | undefined;
+          let downstreamResponse: string | undefined;
+          let downstreamError: string | undefined;
+          const deliveredAt = new Date().toISOString();
+
+          try {
+            if (partner?.downstream_api_url) {
+              const resp = await axios.post(partner.downstream_api_url, systemJson, {
+                headers: {
+                  Authorization: `Bearer ${partner.downstream_api_key}`,
+                  'Content-Type': 'application/json',
+                },
+                timeout: 30_000,
+              });
+              downstreamStatusCode = resp.status;
+              downstreamResponse = String(resp.data ?? '').substring(0, 10_000);
+              logger.info({ jobId: job.id, txSet, endpoint: partner.downstream_api_url, status: resp.status }, 'Delivered via partner routing');
+            } else {
+              await deliverToAPI(txSet, systemJson);
+            }
+          } catch (deliveryErr: unknown) {
+            const axErr = deliveryErr as { response?: { status?: number; data?: unknown }; message?: string };
+            downstreamStatusCode = axErr.response?.status;
+            downstreamResponse = axErr.response?.data ? String(axErr.response.data).substring(0, 10_000) : undefined;
+            downstreamError = axErr.message ?? String(deliveryErr);
+            logger.error({ jobId: job.id, txSet, err: downstreamError, status: downstreamStatusCode }, 'Downstream delivery failed');
           }
 
           await recordJobInOps({
             job,
             txSet,
             partnerId: partner?.partner_id,
+            status: downstreamError ? 'failed' : 'completed',
+            error_message: downstreamError,
             validation_warnings: validationResult.warnings.length > 0 ? validationResult.warnings : undefined,
+            downstream_status_code: downstreamStatusCode,
+            downstream_response: downstreamResponse,
+            downstream_delivered_at: deliveredAt,
+            downstream_error: downstreamError,
           });
+
+          if (downstreamError) {
+            throw new Error(downstreamError);
+          }
+
           logger.info({ jobId: job.id, txSet }, 'Transaction delivered');
         } catch (err: unknown) {
           logger.error({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to process transaction');

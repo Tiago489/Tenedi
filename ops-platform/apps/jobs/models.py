@@ -37,6 +37,12 @@ class JobRecord(models.Model):
     received_at = models.DateTimeField()
     processed_at = models.DateTimeField(null=True, blank=True)
 
+    # Downstream API delivery
+    downstream_status_code = models.IntegerField(null=True, blank=True)
+    downstream_response = models.TextField(blank=True)
+    downstream_delivered_at = models.DateTimeField(null=True, blank=True)
+    downstream_error = models.TextField(blank=True)
+
     class Meta:
         db_table = 'jobs_job_record'
         ordering = ['-received_at']

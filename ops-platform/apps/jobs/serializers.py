@@ -10,4 +10,6 @@ class JobRecordSerializer(serializers.ModelSerializer):
             'status', 'payload_preview', 'raw_edi',
             'error_message', 'validation_errors', 'validation_warnings',
             'received_at', 'processed_at',
+            'downstream_status_code', 'downstream_response',
+            'downstream_delivered_at', 'downstream_error',
         ]

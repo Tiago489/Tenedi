@@ -90,6 +90,8 @@ class JobRecordAdmin(admin.ModelAdmin):
         'job_id', 'queue', 'source', 'transaction_set', 'trading_partner',
         'reprocessed_from', 'payload_preview', 'received_at', 'processed_at',
         'ai_narrative', 'formatted_validation_errors', 'formatted_validation_warnings',
+        'downstream_status_code', 'downstream_delivered_at',
+        'downstream_response', 'downstream_error',
     )
     actions = [requeue_jobs, reprocess_jobs]
 
@@ -107,6 +109,12 @@ class JobRecordAdmin(admin.ModelAdmin):
         ('AI Summary', {
             'fields': ('ai_narrative',),
             'classes': ('wide',),
+        }),
+        ('Downstream API', {
+            'fields': (
+                'downstream_status_code', 'downstream_delivered_at',
+                'downstream_response', 'downstream_error',
+            ),
         }),
         ('Detail', {
             'fields': ('payload_preview', 'error_message', 'received_at', 'processed_at'),
