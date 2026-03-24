@@ -1,4 +1,4 @@
-version: '3.9'
+
 
 x-engine-env: &engine-env
   env_file: .env
@@ -6,6 +6,8 @@ x-engine-env: &engine-env
     - NODE_ENV=production
     - REDIS_URL=redis://redis:6379
     - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-tenet_edi}
+    - OPS_PLATFORM_URL=http://ops:8000
+    - SKIP_DUPLICATE_CHECK=${SKIP_DUPLICATE_CHECK:-false}
 
 services:
   engine:
@@ -21,12 +23,15 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      ops:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
 
   worker-inbound:
     build:
@@ -60,20 +65,32 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    volumes:
+      - ./ops-platform:/app
     env_file: .env
     environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-tenet_edi}
+      - DB_NAME=${POSTGRES_DB:-tenet_edi}
+      - DB_USER=${POSTGRES_USER:-tenet}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-tenet123}
+      - DB_HOST=postgres
+      - DB_PORT=5432
       - REDIS_URL=redis://redis:6379
-      - ENGINE_API_URL=http://engine:3000
+      - ENGINE_URL=http://engine:3000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/admin/login/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     command: >
       sh -c "python manage.py migrate --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120"
+             python manage.py runserver 0.0.0.0:8000"
 
   redis:
     image: redis:7-alpine

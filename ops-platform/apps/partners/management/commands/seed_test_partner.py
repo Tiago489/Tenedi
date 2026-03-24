@@ -18,6 +18,7 @@ class Command(BaseCommand):
                 'sftp_password': 'edi123',
                 'sftp_inbound_dir': '/home/edi/inbound',
                 'sftp_outbound_dir': '/home/edi/outbound',
+                'sftp_poll_interval_ms': 300000,
                 'downstream_api_url': 'https://webhook.site/4091a1e9-b93d-4182-bbaa-41d8c5e34bd4',
                 'downstream_api_key': '',
                 'is_active': True,

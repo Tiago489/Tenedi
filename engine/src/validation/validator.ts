@@ -289,8 +289,9 @@ export async function validateFull(parsed: ParsedEDI, redis?: RedisClient): Prom
   errors.push(...envelopeResult.errors);
   warnings.push(...envelopeResult.warnings);
 
-  // Duplicate check
-  if (redis) {
+  // Duplicate check (skippable via env var for dev/testing)
+  const skipDuplicateCheck = process.env.SKIP_DUPLICATE_CHECK === 'true';
+  if (redis && !skipDuplicateCheck) {
     const isa = parsed.interchange.interchange_control_header_ISA;
     const senderId = isa['interchange_sender_id_06']?.trim() ?? '';
     const controlNumber = isa['interchange_control_number_13']?.trim() ?? '';

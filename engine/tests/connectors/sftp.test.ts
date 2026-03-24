@@ -65,6 +65,7 @@ function makePartner(overrides: Partial<TradingPartner> = {}): TradingPartner {
     sftp_outbound_dir: '/out',
     sftp_poll_interval_ms: 300000,
     sftp_after_pull: 'MOVE_TO_ARCHIVE',
+    sftp_archive_dir: '',
     as2_id: '',
     as2_url: '',
     as2_cert: '',

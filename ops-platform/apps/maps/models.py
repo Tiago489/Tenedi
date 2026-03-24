@@ -31,10 +31,20 @@ class JediSampleFixture(models.Model):
 class TransformMap(models.Model):
     DIRECTION_CHOICES = [('inbound', 'Inbound'), ('outbound', 'Outbound')]
 
+    partner = models.ForeignKey(
+        'partners.TradingPartner',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='transform_maps',
+    )
     transaction_set = models.CharField(max_length=10)
     direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
     version = models.PositiveIntegerField(default=1)
-    dsl_source = models.TextField()           # source of truth — human/AI edits this
+    dsl_source = models.TextField(blank=True)  # source of truth — human/AI edits this
+    custom_transform_id = models.CharField(
+        max_length=100, blank=True,
+        help_text='Engine-side custom transform ID (e.g. "cevapd-204"). When set, the engine uses a coded transform instead of DSL.',
+    )
     compiled_jsonata = models.TextField(blank=True)
     validation_result = models.JSONField(null=True, blank=True)
     is_live = models.BooleanField(default=False)
@@ -51,7 +61,14 @@ class TransformMap(models.Model):
         db_table = 'maps_transform_map'
 
     def __str__(self) -> str:
-        return f'{self.transaction_set} {self.direction} v{self.version}'
+        label = self.partner.partner_id if self.partner else 'default'
+        return f'{label} — {self.transaction_set} {self.direction} v{self.version}'
+
+    @property
+    def map_type(self) -> str:
+        if self.custom_transform_id:
+            return f'Custom Transform: {self.custom_transform_id}'
+        return 'DSL Map'
 
 
 class DSLKeywordRequest(models.Model):

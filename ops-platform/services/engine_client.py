@@ -1,13 +1,16 @@
+import os
 import requests
 from django.conf import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
+ENGINE_URL = os.environ.get('ENGINE_URL', 'http://localhost:3000')
+
 
 class EngineClient:
     def __init__(self):
-        self.base_url = settings.ENGINE_API_URL.rstrip('/')
+        self.base_url = ENGINE_URL.rstrip('/')
         self.api_key = getattr(settings, 'ENGINE_API_KEY', '')
         self.session = requests.Session()
         if self.api_key:

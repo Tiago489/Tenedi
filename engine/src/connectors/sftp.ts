@@ -67,14 +67,15 @@ function globalSFTPConfig(): SFTPConnConfig {
 }
 
 function partnerSFTPConfig(partner: TradingPartner): SFTPConnConfig {
+  const inboundDir = partner.sftp_inbound_dir || '/inbound';
   return {
     host: partner.sftp_host,
     port: partner.sftp_port ?? 22,
     user: partner.sftp_user,
     password: partner.sftp_password,
-    inboundDir: partner.sftp_inbound_dir || '/inbound',
+    inboundDir,
     outboundDir: partner.sftp_outbound_dir || '/outbound',
-    archiveDir: partner.sftp_outbound_dir ? partner.sftp_outbound_dir.replace('outbound', 'archive') : '/archive',
+    archiveDir: partner.sftp_archive_dir || `${inboundDir}/archive`,
     pollIntervalMs: partner.sftp_poll_interval_ms ?? 300000,
     afterPull: partner.sftp_after_pull ?? 'MOVE_TO_ARCHIVE',
     namespace: partner.partner_id,
@@ -200,8 +201,10 @@ export class SFTPPoller {
           }
         } else {
           try {
+            // Ensure archive directory exists before moving
+            try { await this.client.mkdir(archiveDir, true); } catch { /* already exists */ }
             await this.client.rename(remotePath, `${archiveDir}/${file.name}`);
-            logger.debug({ file: file.name }, 'Archived file');
+            logger.debug({ file: file.name, archiveDir }, 'Archived file');
             await postSFTPLog({ partner_id: this.partnerId, action: 'MOVE', filename: file.name, status: 'SUCCESS' });
           } catch (err: unknown) {
             const message = (err as Error).message;

@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import status
+from django.utils import timezone
 from .models import TransformMap, ReferenceTable, MappingExample
 from .serializers import TransformMapSerializer, ReferenceTableSerializer, MappingExampleSerializer
 from services.dsl_ai import DSLGenerator
@@ -75,3 +76,63 @@ class MappingExampleView(APIView):
         if tx_set:
             qs = qs.filter(transaction_set=tx_set)
         return Response(MappingExampleSerializer(qs[:20], many=True).data)
+
+
+class MapSyncView(APIView):
+    """
+    POST /api/maps/sync/ — upsert TransformMap records from engine registry.
+    Called automatically by the engine on startup so Django Admin stays in sync.
+    Body: array of registry entries from engine's mapRegistry.registryDump().
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from apps.partners.models import TradingPartner
+
+        entries = request.data
+        if not isinstance(entries, list):
+            return Response({'error': 'expected array of registry entries'}, status=400)
+
+        created = 0
+        updated = 0
+
+        for entry in entries:
+            tx_set = entry.get('transactionSet', '')
+            direction = entry.get('direction', '')
+            partner_key = entry.get('partnerKey')  # e.g. "cevapd" or null
+            engine_id = entry.get('id', '')
+
+            if not tx_set or not direction:
+                continue
+
+            # Resolve partner FK from partner_key
+            trading_partner = None
+            if partner_key:
+                trading_partner = TradingPartner.objects.filter(
+                    partner_id__iexact=partner_key,
+                ).first()
+
+            # Upsert by (transaction_set, direction, partner)
+            obj, was_created = TransformMap.objects.update_or_create(
+                transaction_set=tx_set,
+                direction=direction,
+                partner=trading_partner,
+                defaults={
+                    'version': entry.get('version', 1),
+                    'custom_transform_id': entry.get('customTransformId') or '',
+                    'dsl_source': entry.get('dslSource') or '',
+                    'is_live': True,
+                    'published_at': timezone.now(),
+                },
+            )
+
+            if was_created:
+                created += 1
+            else:
+                updated += 1
+
+        return Response({
+            'synced': created + updated,
+            'created': created,
+            'updated': updated,
+        })

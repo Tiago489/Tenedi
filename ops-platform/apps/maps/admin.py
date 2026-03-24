@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib import messages
 from django.utils import timezone
+from django.utils.html import format_html
 from .models import ReferenceTable, JediSampleFixture, TransformMap, DSLKeywordRequest, DSLExample, MappingExample
 from services.engine_client import EngineClient
 
@@ -70,15 +71,23 @@ compile_and_publish.short_description = 'Compile & Publish selected maps'
 
 @admin.register(TransformMap)
 class TransformMapAdmin(admin.ModelAdmin):
-    list_display = ('transaction_set', 'direction', 'version', 'is_live', 'published_at', 'published_by')
-    list_filter = ('direction', 'is_live', 'transaction_set')
-    search_fields = ('transaction_set', 'dsl_source')
-    readonly_fields = ('version', 'compiled_jsonata', 'validation_result', 'published_at', 'published_by', 'created_at')
+    """Top-level audit view for all transform maps across partners."""
+    list_display = ('partner_link', 'transaction_set', 'direction', 'display_map_type', 'is_live', 'published_at')
+    list_filter = ('direction', 'is_live', 'transaction_set', 'partner')
+    search_fields = ('transaction_set', 'dsl_source', 'custom_transform_id')
+    readonly_fields = (
+        'version', 'compiled_jsonata', 'validation_result',
+        'published_at', 'published_by', 'created_at', 'display_map_type',
+    )
     actions = [compile_and_publish]
 
     fieldsets = (
-        ('Map Definition', {
-            'fields': ('transaction_set', 'direction', 'dsl_source'),
+        ('Partner & Identity', {
+            'fields': ('partner', 'transaction_set', 'direction', 'display_map_type', 'custom_transform_id'),
+        }),
+        ('DSL Source', {
+            'fields': ('dsl_source',),
+            'classes': ('collapse',) if True else (),
         }),
         ('Compiled Output', {
             'classes': ('collapse',),
@@ -88,6 +97,18 @@ class TransformMapAdmin(admin.ModelAdmin):
             'fields': ('is_live', 'version', 'published_at', 'published_by', 'created_at'),
         }),
     )
+
+    @admin.display(description='Type')
+    def display_map_type(self, obj):
+        return obj.map_type
+
+    @admin.display(description='Partner')
+    def partner_link(self, obj):
+        if obj.partner:
+            from django.urls import reverse
+            url = reverse('admin:partners_tradingpartner_change', args=[obj.partner.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.partner)
+        return '—'
 
 
 @admin.register(DSLKeywordRequest)
