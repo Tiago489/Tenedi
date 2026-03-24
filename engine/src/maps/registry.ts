@@ -104,6 +104,39 @@ export class MapRegistry {
     }));
   }
 
+  /** Full registry dump for syncing to Django ops platform. */
+  registryDump(): Array<{
+    id: string;
+    storeKey: string;
+    transactionSet: string;
+    direction: string;
+    version: number;
+    customTransformId?: string;
+    dslSource?: string;
+    partnerKey: string | null;
+  }> {
+    return Array.from(this.store.entries()).map(([storeKey, entry]) => {
+      const m = entry.current;
+      // Extract partner from store key: "cevapd-204:inbound" → "cevapd", "204:inbound" → null
+      const colonIdx = storeKey.indexOf(':');
+      const prefix = storeKey.slice(0, colonIdx);
+      // If prefix contains a hyphen, it's "{partner}-{txSet}"; otherwise it's just "{txSet}"
+      const hyphenIdx = prefix.indexOf('-');
+      const partnerKey = hyphenIdx >= 0 ? prefix.slice(0, hyphenIdx) : null;
+
+      return {
+        id: m.id,
+        storeKey,
+        transactionSet: m.transactionSet,
+        direction: m.direction,
+        version: m.version,
+        customTransformId: m.customTransformId,
+        dslSource: m.dslSource,
+        partnerKey,
+      };
+    });
+  }
+
   loadFromDisk(): void {
     const dbPath = config.maps.dbPath;
     if (!fs.existsSync(dbPath)) return;

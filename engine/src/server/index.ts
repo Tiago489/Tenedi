@@ -61,12 +61,25 @@ async function fetchSFTPPartners(): Promise<TradingPartner[]> {
   }
 }
 
+async function syncMapsToOps(): Promise<void> {
+  try {
+    const registry = mapRegistry.registryDump();
+    await axios.post(`${OPS_URL}/api/maps/sync/`, registry, { timeout: 5_000 });
+    logger.info({ count: registry.length }, 'Map registry synced to ops platform');
+  } catch (err: unknown) {
+    logger.warn({ err: (err as Error).message }, 'Could not sync maps to ops platform — continuing');
+  }
+}
+
 async function main() {
   mapRegistry.loadFromDisk();
 
   const app = await buildServer();
   await app.listen({ host: config.server.host, port: config.server.port });
   logger.info({ port: config.server.port }, 'EDI transform engine started');
+
+  // Sync map registry to Django so Admin shows all maps
+  await syncMapsToOps();
 
   const partnerPollers: SFTPPoller[] = [];
 

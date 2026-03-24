@@ -12,6 +12,11 @@ export async function mapsRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.send(mapRegistry.list());
   });
 
+  // GET /maps/registry — full registry dump for Django sync
+  fastify.get('/registry', async (_req, reply) => {
+    return reply.send(mapRegistry.registryDump());
+  });
+
   // GET /maps/vocabulary — AI-generatable keyword tokens
   fastify.get('/vocabulary', async (_req, reply) => {
     return reply.send({ keywords: compiler.aiVocabulary() });
