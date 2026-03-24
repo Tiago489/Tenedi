@@ -31,6 +31,12 @@ export interface RecordJobOptions {
   downstream_response?: string;
   downstream_delivered_at?: string;
   downstream_error?: string;
+  interchange_control_number?: string;
+  transaction_set_control_number?: string;
+  transaction_set_index?: number;
+  transaction_sets_in_interchange?: number;
+  /** Override job_id for multi-TX files so each TX gets a unique record. */
+  jobIdSuffix?: string;
 }
 
 export async function recordJobInOps(opts: RecordJobOptions): Promise<void> {
@@ -38,10 +44,13 @@ export async function recordJobInOps(opts: RecordJobOptions): Promise<void> {
     job, txSet, partnerId, status = 'completed',
     error_message, validation_errors, validation_warnings,
     downstream_status_code, downstream_response, downstream_delivered_at, downstream_error,
+    interchange_control_number, transaction_set_control_number,
+    transaction_set_index, transaction_sets_in_interchange, jobIdSuffix,
   } = opts;
   try {
+    const jobId = jobIdSuffix ? `${job.id}:${jobIdSuffix}` : job.id;
     await axios.post(`${OPS_URL}/api/jobs/`, {
-      job_id: job.id,
+      job_id: jobId,
       queue: 'edi-inbound',
       source: (job.data as { source: string }).source,
       transaction_set: txSet,
@@ -58,6 +67,10 @@ export async function recordJobInOps(opts: RecordJobOptions): Promise<void> {
       ...(downstream_response !== undefined ? { downstream_response } : {}),
       ...(downstream_delivered_at !== undefined ? { downstream_delivered_at } : {}),
       ...(downstream_error !== undefined ? { downstream_error } : {}),
+      ...(interchange_control_number !== undefined ? { interchange_control_number } : {}),
+      ...(transaction_set_control_number !== undefined ? { transaction_set_control_number } : {}),
+      ...(transaction_set_index !== undefined ? { transaction_set_index } : {}),
+      ...(transaction_sets_in_interchange !== undefined ? { transaction_sets_in_interchange } : {}),
     }, { timeout: 5_000 });
   } catch (err: unknown) {
     logger.warn({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to record job in ops platform — continuing');
@@ -129,14 +142,38 @@ const worker = new Worker(
       logger.info({ jobId: job.id, isaSenderId }, 'No trading partner found — using static routing');
     }
 
+    // Count total TX sets across all functional groups for multi-TX tracking
+    const isa = parsed.interchange.interchange_control_header_ISA;
+    const isaCtrl = (isa['interchange_control_number_13'] ?? '').trim();
+    const isaSender = (isa['interchange_sender_id_06'] ?? '').trim();
+    const totalTxSets = parsed.interchange.functional_groups.reduce((sum, fg) => sum + fg.transactions.length, 0);
+    const isMultiTx = totalTxSets > 1;
+    let globalTxIndex = 0;
+
     for (const fg of parsed.interchange.functional_groups) {
       for (const tx of fg.transactions) {
         const txSet = tx.transaction_set_header_ST.transaction_set_identifier_code_01;
+        const stCtrl = tx.transaction_set_header_ST.transaction_set_control_number_02;
+
         try {
           const map = mapRegistry.getForPartner(txSet, 'inbound', job.data.partnerId ?? '');
           let systemJson: Record<string, unknown>;
+
           if (map.customTransformId && customTransforms[map.customTransformId]) {
-            systemJson = customTransforms[map.customTransformId](parsed);
+            // For custom transforms: compose a per-TX ParsedEDI so the transform
+            // reads transactions[0] as the current TX, with shared envelope context.
+            const perTxParsed: typeof parsed = {
+              raw: parsed.raw,
+              transactionSets: [txSet],
+              interchange: {
+                ...parsed.interchange,
+                functional_groups: [{
+                  ...fg,
+                  transactions: [tx],
+                }],
+              },
+            };
+            systemJson = customTransforms[map.customTransformId](perTxParsed);
           } else {
             systemJson = jediToSystem(tx, map);
           }
@@ -169,7 +206,7 @@ const worker = new Worker(
               });
               downstreamStatusCode = resp.status;
               downstreamResponse = String(resp.data ?? '').substring(0, 10_000);
-              logger.info({ jobId: job.id, txSet, endpoint: partner.downstream_api_url, status: resp.status }, 'Delivered via partner routing');
+              logger.info({ jobId: job.id, txSet, txIndex: globalTxIndex, endpoint: partner.downstream_api_url, status: resp.status }, 'Delivered via partner routing');
             } else {
               await deliverToAPI(txSet, systemJson);
             }
@@ -178,7 +215,7 @@ const worker = new Worker(
             downstreamStatusCode = axErr.response?.status;
             downstreamResponse = axErr.response?.data ? String(axErr.response.data).substring(0, 10_000) : undefined;
             downstreamError = axErr.message ?? String(deliveryErr);
-            logger.error({ jobId: job.id, txSet, err: downstreamError, status: downstreamStatusCode }, 'Downstream delivery failed');
+            logger.error({ jobId: job.id, txSet, txIndex: globalTxIndex, err: downstreamError, status: downstreamStatusCode }, 'Downstream delivery failed');
           }
 
           await recordJobInOps({
@@ -192,38 +229,54 @@ const worker = new Worker(
             downstream_response: downstreamResponse,
             downstream_delivered_at: deliveredAt,
             downstream_error: downstreamError,
+            interchange_control_number: isaCtrl,
+            transaction_set_control_number: stCtrl,
+            transaction_set_index: globalTxIndex,
+            transaction_sets_in_interchange: totalTxSets,
+            jobIdSuffix: isMultiTx ? `tx${globalTxIndex}` : undefined,
           });
+
+          // Mark this specific TX as processed (ISA + ST control number)
+          if (isaSender && isaCtrl) {
+            await markProcessed(isaSender, isaCtrl, redisClient, stCtrl);
+          }
 
           if (downstreamError) {
             throw new Error(downstreamError);
           }
 
-          logger.info({ jobId: job.id, txSet }, 'Transaction delivered');
+          logger.info({ jobId: job.id, txSet, txIndex: globalTxIndex, totalTxSets }, 'Transaction delivered');
         } catch (err: unknown) {
-          logger.error({ jobId: job.id, txSet, err: (err as Error).message }, 'Failed to process transaction');
+          logger.error({ jobId: job.id, txSet, txIndex: globalTxIndex, err: (err as Error).message }, 'Failed to process transaction');
           throw err;
         }
+
+        // Generate 997 ACK for this transaction set
+        try {
+          const perTxParsed: typeof parsed = {
+            raw: parsed.raw,
+            transactionSets: [txSet],
+            interchange: {
+              ...parsed.interchange,
+              functional_groups: [{
+                ...fg,
+                transactions: [tx],
+              }],
+            },
+          };
+          const ack997 = generate997(perTxParsed);
+          await outboundQueue.add(
+            `997-ack-${stCtrl}`,
+            { ediContent: ack997, transactionSet: '997', transport: 'sftp', source: 'auto-997', partnerId: partner?.partner_id },
+            { priority: 1 },
+          );
+          logger.info({ jobId: job.id, txIndex: globalTxIndex, stCtrl }, '997 ACK enqueued');
+        } catch (err: unknown) {
+          logger.error({ jobId: job.id, txIndex: globalTxIndex, err: (err as Error).message }, 'Failed to generate 997');
+        }
+
+        globalTxIndex++;
       }
-    }
-
-    // Mark interchange as processed in Redis for duplicate detection
-    const isa = parsed.interchange.interchange_control_header_ISA;
-    const senderId = isa['interchange_sender_id_06']?.trim() ?? '';
-    const controlNumber = isa['interchange_control_number_13']?.trim() ?? '';
-    if (senderId && controlNumber) {
-      await markProcessed(senderId, controlNumber, redisClient);
-    }
-
-    try {
-      const ack997 = generate997(parsed);
-      await outboundQueue.add(
-        '997-ack',
-        { ediContent: ack997, transactionSet: '997', transport: 'sftp', source: 'auto-997', partnerId: partner?.partner_id },
-        { priority: 1 },
-      );
-      logger.info({ jobId: job.id }, '997 ACK enqueued');
-    } catch (err: unknown) {
-      logger.error({ jobId: job.id, err: (err as Error).message }, 'Failed to generate 997');
     }
   },
   {

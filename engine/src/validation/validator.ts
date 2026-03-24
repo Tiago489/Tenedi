@@ -240,8 +240,10 @@ export async function checkDuplicate(
   senderId: string,
   controlNumber: string,
   redis: RedisClient,
+  stControlNumber?: string,
 ): Promise<ValidationResult> {
-  const key = `edi:processed:${senderId}:${controlNumber}`;
+  const keySuffix = stControlNumber ? `:${stControlNumber}` : '';
+  const key = `edi:processed:${senderId}:${controlNumber}${keySuffix}`;
   try {
     const existing = await redis.get(key);
     if (existing !== null) {
@@ -249,7 +251,7 @@ export async function checkDuplicate(
         valid: false,
         errors: [{
           code: 'DUPLICATE_INTERCHANGE',
-          message: `Interchange control number ${controlNumber} from sender ${senderId} was already processed`,
+          message: `Interchange control number ${controlNumber}${stControlNumber ? ' TX ' + stControlNumber : ''} from sender ${senderId} was already processed`,
           segment: 'ISA',
           field: 'interchange_control_number_13',
         }],
@@ -266,8 +268,10 @@ export async function markProcessed(
   senderId: string,
   controlNumber: string,
   redis: RedisClient,
+  stControlNumber?: string,
 ): Promise<void> {
-  const key = `edi:processed:${senderId}:${controlNumber}`;
+  const keySuffix = stControlNumber ? `:${stControlNumber}` : '';
+  const key = `edi:processed:${senderId}:${controlNumber}${keySuffix}`;
   try {
     await redis.set(key, '1', 'EX', 30 * 24 * 60 * 60);
   } catch (err: unknown) {

@@ -90,6 +90,8 @@ class JobRecordAdmin(admin.ModelAdmin):
         'job_id', 'queue', 'source', 'transaction_set', 'trading_partner',
         'reprocessed_from', 'payload_preview', 'received_at', 'processed_at',
         'ai_narrative', 'formatted_validation_errors', 'formatted_validation_warnings',
+        'interchange_control_number', 'transaction_set_control_number',
+        'transaction_set_index', 'transaction_sets_in_interchange',
         'downstream_status_code', 'downstream_delivered_at',
         'downstream_response', 'downstream_error',
     )
@@ -100,6 +102,12 @@ class JobRecordAdmin(admin.ModelAdmin):
             'fields': (
                 'job_id', 'queue', 'source', 'transaction_set',
                 'trading_partner', 'reprocessed_from', 'status', 'retry_count',
+            ),
+        }),
+        ('Interchange', {
+            'fields': (
+                'interchange_control_number', 'transaction_set_control_number',
+                'transaction_set_index', 'transaction_sets_in_interchange',
             ),
         }),
         ('Validation', {

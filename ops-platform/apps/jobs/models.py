@@ -37,6 +37,24 @@ class JobRecord(models.Model):
     received_at = models.DateTimeField()
     processed_at = models.DateTimeField(null=True, blank=True)
 
+    # Multi-TX interchange tracking
+    interchange_control_number = models.CharField(
+        max_length=9, blank=True, default='',
+        help_text='ISA interchange control number',
+    )
+    transaction_set_control_number = models.CharField(
+        max_length=9, blank=True, default='',
+        help_text='ST transaction set control number',
+    )
+    transaction_set_index = models.IntegerField(
+        default=0,
+        help_text='Index of this TX set within the interchange (0-based)',
+    )
+    transaction_sets_in_interchange = models.IntegerField(
+        default=1,
+        help_text='Total number of TX sets in the original interchange',
+    )
+
     # Downstream API delivery
     downstream_status_code = models.IntegerField(null=True, blank=True)
     downstream_response = models.TextField(blank=True)
