@@ -1,0 +1,40 @@
+{
+  "senderId": "CEVAPD",
+  "receiverId": "PALLET",
+  "applicationSenderCode": "CEVAPD",
+  "receiverSenderCode": "PALLET",
+  "usageIndicatorCode": "P",
+  "transactionSetIdentifierCode": "204",
+  "transactionSetPurposeCode": "ORIGINAL",
+  "senderContactCode": "FBTC",
+  "standardCarrierAlphaCode": "FBTC",
+  "order": {
+    "isLineHaul": false,
+    "secondaryRefNumber": "192032687",
+    "tertiaryRefNumber": "587972344",
+    "quaternaryRefNumber": "587972345",
+    "paymentMethod": "PREPAID_BY_SELLER",
+    "pickupOrDelivery": "PICKUP_AND_DELIVERY",
+    "endStop": {},
+    "deadlineDate": "2026-03-23",
+    "standardOrderFields": {}
+  },
+  "consigneeInformation": {
+    "name": "SCOTT FOX",
+    "addressLine1": "7 CENTER ST",
+    "city": "PLYMOUTH",
+    "state": "NH",
+    "zip": "03264",
+    "country": "USA",
+    "contactName": "N/A",
+    "contactPhone": "6034811873",
+    "deadlineDate": "2026-03-23"
+  },
+  "packages": [
+    {
+      "weight": 5,
+      "quantity": 1,
+      "packageType": "PCS"
+    }
+  ]
+}

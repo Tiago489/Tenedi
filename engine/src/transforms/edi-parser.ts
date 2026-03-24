@@ -7,6 +7,18 @@ const DETAIL_START_TAGS = new Set(['OID', 'S5', 'LX', 'HL', 'IT1', 'PO1']);
 const SUMMARY_START_TAGS = new Set(['L3', 'CTT', 'SE']);
 const LOOP_START_TAGS = new Set(['N1', 'S5', 'OID', 'LX', 'HL']);
 
+// Depth 0 = top-level detail loops.  Depth 1 = sub-loops that nest inside depth-0.
+const LOOP_DEPTH: Record<string, number> = {
+  S5: 0, LX: 0, HL: 0,
+  OID: 1, N1: 1,
+};
+
+interface LoopFrame {
+  tag: string;
+  depth: number;
+  entry: Record<string, unknown>;
+}
+
 const ISA_FIELD_NAMES = [
   'authorization_information_qualifier_01',
   'authorization_information_02',
@@ -156,7 +168,7 @@ function buildTransaction(segments: string[], startIdx: number, sep: string): { 
   let section: 'heading' | 'detail' | 'summary' = 'heading';
   let seTrailer: Record<string, string> = {};
   let i = startIdx + 1;
-  let currentLoopId: string | undefined;
+  let loopStack: LoopFrame[] = [];
 
   while (i < segments.length) {
     const segStr = segments[i];
@@ -173,23 +185,52 @@ function buildTransaction(segments: string[], startIdx: number, sep: string): { 
     }
 
     if (SUMMARY_START_TAGS.has(tag)) {
-      if (section !== 'summary') { section = 'summary'; currentLoopId = undefined; }
+      if (section !== 'summary') { section = 'summary'; loopStack = []; }
     } else if (DETAIL_START_TAGS.has(tag) && section === 'heading') {
       section = 'detail';
-      currentLoopId = undefined;
+      loopStack = [];
     }
 
-    if (LOOP_START_TAGS.has(tag)) {
-      currentLoopId = tag;
-    }
-
+    const sectionObj = section === 'heading' ? heading : section === 'detail' ? detail : summary;
     const parts = segStr.split(sep);
     const elements = parts.slice(1);
-    const raw: RawSegment = { tag, elements, loopId: currentLoopId };
+    const tagLower = tag.toLowerCase();
+
+    // Build segment data object
+    const segData: Record<string, string> = {};
+    elements.forEach((el, idx) => {
+      segData[`${tagLower}_element_${String(idx + 1).padStart(2, '0')}`] = el;
+    });
+
+    const raw: RawSegment = { tag, elements, loopId: tag };
     rawSegments.push(raw);
 
-    const target = section === 'heading' ? heading : section === 'detail' ? detail : summary;
-    addSegmentToSection(target, raw);
+    if (LOOP_START_TAGS.has(tag)) {
+      const depth = LOOP_DEPTH[tag] ?? 0;
+
+      // Pop frames at depth >= this one
+      while (loopStack.length > 0 && loopStack[loopStack.length - 1].depth >= depth) {
+        loopStack.pop();
+      }
+
+      // Parent = top of stack's entry, or section if stack empty
+      const parent = loopStack.length > 0 ? loopStack[loopStack.length - 1].entry : sectionObj;
+
+      const loopKey = `${tagLower}_loop`;
+      if (!Array.isArray(parent[loopKey])) {
+        parent[loopKey] = [];
+      }
+      const loopArr = parent[loopKey] as Record<string, unknown>[];
+
+      const entry: Record<string, unknown> = { [tagLower]: segData };
+      loopArr.push(entry);
+
+      loopStack.push({ tag, depth, entry });
+    } else {
+      // Regular segment → add to innermost loop entry, or section
+      const target = loopStack.length > 0 ? loopStack[loopStack.length - 1].entry : sectionObj;
+      addToTarget(target, tagLower, segData);
+    }
 
     i++;
   }
@@ -207,48 +248,14 @@ function buildTransaction(segments: string[], startIdx: number, sep: string): { 
   return { tx, consumed: i - startIdx };
 }
 
-function addSegmentToSection(section: Record<string, unknown>, raw: RawSegment): void {
-  const { tag, elements, loopId } = raw;
-  const tagLower = tag.toLowerCase();
-  const segData: Record<string, string> = {};
-  elements.forEach((el, idx) => {
-    segData[`${tagLower}_element_${String(idx + 1).padStart(2, '0')}`] = el;
-  });
-
-  if (loopId && LOOP_START_TAGS.has(loopId)) {
-    const loopKey = `${loopId.toLowerCase()}_loop`;
-    if (!Array.isArray(section[loopKey])) {
-      section[loopKey] = [];
-    }
-    const loopArr = section[loopKey] as Record<string, unknown>[];
-
-    if (tag === loopId) {
-      // Start of new loop entry
-      loopArr.push({ [tagLower]: segData });
-    } else {
-      // Append to most recent loop entry
-      if (loopArr.length > 0) {
-        const last = loopArr[loopArr.length - 1] as Record<string, unknown>;
-        const existing = last[tagLower];
-        if (existing === undefined) {
-          last[tagLower] = segData;
-        } else if (Array.isArray(existing)) {
-          (existing as Record<string, unknown>[]).push(segData);
-        } else {
-          last[tagLower] = [existing, segData];
-        }
-      }
-    }
+function addToTarget(target: Record<string, unknown>, tagLower: string, segData: Record<string, string>): void {
+  const existing = target[tagLower];
+  if (existing === undefined) {
+    target[tagLower] = segData;
+  } else if (Array.isArray(existing)) {
+    (existing as Record<string, unknown>[]).push(segData);
   } else {
-    // Flat segment (no loop context, or loop-start tag is itself)
-    const existing = section[tagLower];
-    if (existing === undefined) {
-      section[tagLower] = segData;
-    } else if (Array.isArray(existing)) {
-      (existing as Record<string, unknown>[]).push(segData);
-    } else {
-      section[tagLower] = [existing, segData];
-    }
+    target[tagLower] = [existing, segData];
   }
 }
 

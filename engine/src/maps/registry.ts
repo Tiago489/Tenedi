@@ -18,8 +18,24 @@ export class MapRegistry {
     return `${transactionSet}:${direction}`;
   }
 
+  /** Parse map ID to determine storage key. Partner-specific IDs like "cevapd-204-inbound"
+   *  store under "cevapd-204:inbound"; simple IDs like "seed-204-inbound" use default "204:inbound". */
+  private partnerKeyFromId(id: string, transactionSet: string, direction: 'inbound' | 'outbound'): string {
+    const parts = id.split('-');
+    // Partner-specific: {partnerId}-{transactionSet}-{direction} (3+ parts where middle matches txSet)
+    // Exclude conventional "seed-" prefix which is used for default maps
+    if (parts.length >= 3 && parts[0] !== 'seed') {
+      const last = parts[parts.length - 1];
+      const middle = parts.slice(1, parts.length - 1).join('-');
+      if (middle === transactionSet && last === direction) {
+        return parts[0].toLowerCase() + '-' + transactionSet + ':' + direction;
+      }
+    }
+    return this.key(transactionSet, direction);
+  }
+
   publish(mapInput: Omit<TransformMap, 'version' | 'publishedAt'>): TransformMap {
-    const k = this.key(mapInput.transactionSet, mapInput.direction);
+    const k = this.partnerKeyFromId(mapInput.id, mapInput.transactionSet, mapInput.direction);
     const existing = this.store.get(k);
     const version = existing ? existing.current.version + 1 : 1;
 
@@ -34,7 +50,7 @@ export class MapRegistry {
     this.store.set(k, entry);
     this.persistToDisk(map);
 
-    logger.info({ transactionSet: map.transactionSet, direction: map.direction, version }, 'Map published');
+    logger.info({ transactionSet: map.transactionSet, direction: map.direction, version, key: k }, 'Map published');
     return map;
   }
 
@@ -42,6 +58,15 @@ export class MapRegistry {
     const entry = this.store.get(this.key(transactionSet, direction));
     if (!entry) throw new Error(`No map found for ${transactionSet} ${direction}`);
     return entry.current;
+  }
+
+  getForPartner(transactionSet: string, direction: 'inbound' | 'outbound', partnerId: string): TransformMap {
+    if (partnerId) {
+      const partnerKey = partnerId.toLowerCase() + '-' + transactionSet + ':' + direction;
+      const entry = this.store.get(partnerKey);
+      if (entry) return entry.current;
+    }
+    return this.get(transactionSet, direction);
   }
 
   getVersion(transactionSet: string, direction: 'inbound' | 'outbound', version: number): TransformMap | undefined {

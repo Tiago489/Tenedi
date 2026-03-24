@@ -14,6 +14,8 @@ export interface TransformMap {
   mappings: FieldMapping[];
   dslSource?: string;
   validationSchema?: string;
+  /** When set, the inbound worker uses a custom transform function instead of jediToSystem. */
+  customTransformId?: string;
 }
 
 export const TransformFunctions = {
@@ -37,7 +39,12 @@ export const TransformFunctions = {
       'PP': 'PREPAID_BY_SELLER',
       'CC': 'COLLECT',
       'NC': 'SERVICE_FREIGHT_NO_CHARGES',
+      'TP': 'THIRD_PARTY_PAY',
     };
+    return codes[v] ?? v;
+  },
+  purposeCode: (v: string) => {
+    const codes: Record<string, string> = { '00': 'ORIGINAL', '01': 'CANCELLATION', '04': 'CHANGE' };
     return codes[v] ?? v;
   },
   serviceLevel211: (v: string) => {

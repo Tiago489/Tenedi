@@ -1,0 +1,6 @@
+{
+  "client": "client-b",
+  "fieldMappings": {
+    "shipperBillOfLadingNumber": "order.secondaryRefNumber"
+  }
+}

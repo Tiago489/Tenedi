@@ -12,6 +12,10 @@ import { outboundQueue } from '../queues';
 import { deliverToAPI } from '../../routing/router';
 import { getPartner } from '../../partners/partner-client';
 import { validateFull, markProcessed, type ValidationError, type ValidationWarning } from '../../validation/validator';
+import { applyProfile, type ClientProfile } from '../../transforms/profile';
+import { customTransforms } from '../../maps/transforms/index';
+import fs from 'fs';
+import path from 'path';
 
 const OPS_URL = process.env.OPS_PLATFORM_URL ?? 'http://localhost:8000';
 
@@ -55,10 +59,23 @@ import '../../maps/seeds/211.map';
 import '../../maps/seeds/214.map';
 import '../../maps/seeds/990.map';
 import '../../maps/seeds/997.map';
+import '../../maps/seeds/cevapd-204.map';
 
 mapRegistry.loadFromDisk();
 
 const logger = pino({ name: 'worker:inbound' });
+
+const PROFILES_DIR = path.join(__dirname, '../../maps/profiles');
+
+function loadProfile(clientId: string): ClientProfile | null {
+  try {
+    const filePath = path.join(PROFILES_DIR, `${clientId}.profile.json`);
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ClientProfile;
+  } catch {
+    return null;
+  }
+}
 const connection = { url: config.redis.url };
 
 const redisClient = new Redis(config.redis.url, { maxRetriesPerRequest: null, lazyConnect: true });
@@ -104,8 +121,25 @@ const worker = new Worker(
       for (const tx of fg.transactions) {
         const txSet = tx.transaction_set_header_ST.transaction_set_identifier_code_01;
         try {
-          const map = mapRegistry.get(txSet, 'inbound');
-          const systemJson = jediToSystem(tx, map);
+          const map = mapRegistry.getForPartner(txSet, 'inbound', job.data.partnerId ?? '');
+          let systemJson: Record<string, unknown>;
+          if (map.customTransformId && customTransforms[map.customTransformId]) {
+            systemJson = customTransforms[map.customTransformId](parsed);
+          } else {
+            systemJson = jediToSystem(tx, map);
+          }
+
+          // Apply client profile if one exists for this partner
+          const clientId = (job.data as { clientId?: string }).clientId ?? partner?.partner_id;
+          if (clientId) {
+            const profile = loadProfile(clientId);
+            if (profile) {
+              systemJson = applyProfile(systemJson, profile);
+              logger.info({ jobId: job.id, txSet, client: profile.client }, 'Client profile applied');
+            } else {
+              logger.debug({ jobId: job.id, txSet, clientId }, 'No profile found — passing systemJson through');
+            }
+          }
 
           if (partner?.downstream_api_url) {
             // Use partner-specific routing

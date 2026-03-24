@@ -1,0 +1,44 @@
+{
+  "senderId": "CEVAPD",
+  "receiverId": "BRBF",
+  "applicationSenderCode": "CEVAPD",
+  "receiverSenderCode": "BRBF",
+  "usageIndicatorCode": "P",
+  "transactionSetIdentifierCode": "204",
+  "transactionSetPurposeCode": "ORIGINAL",
+  "senderContactCode": "BRBF",
+  "standardCarrierAlphaCode": "BRBF",
+  "order": {
+    "mawb": "61465658",
+    "isLineHaul": false,
+    "secondaryRefNumber": "192001315",
+    "tertiaryRefNumber": "587901681",
+    "quaternaryRefNumber": "587901682",
+    "quinaryRefNumber": "MEM0710",
+    "paymentMethod": "PREPAID_BY_SELLER",
+    "pickupOrDelivery": "PICKUP_AND_DELIVERY",
+    "endStop": {},
+    "deadlineDate": "2026-03-23",
+    "standardOrderFields": {
+      "shipperBillOfLadingNumber": "P139085366"
+    }
+  },
+  "consigneeInformation": {
+    "name": "BRICE ASHLEY",
+    "addressLine1": "145A KATIE TRAIL SOUTHEAST",
+    "city": "BOGUE CHITTO",
+    "state": "MS",
+    "zip": "39629",
+    "country": "USA",
+    "contactName": "BRICE ASHLEY",
+    "contactPhone": "6015173729",
+    "deadlineDate": "2026-03-31"
+  },
+  "packages": [
+    {
+      "weight": 232,
+      "quantity": 1,
+      "packageType": "PCS"
+    }
+  ]
+}

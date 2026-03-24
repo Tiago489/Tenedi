@@ -1,0 +1,9 @@
+{
+  "client": "client-b",
+  "fieldMappings": {
+    "shipperBillOfLadingNumber": "order.secondaryRefNumber"
+  },
+  "expected": {
+    "shipperBillOfLadingNumber": "192032687"
+  }
+}

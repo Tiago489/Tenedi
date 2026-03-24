@@ -3,6 +3,7 @@ import { jediToSystem } from '../../src/transforms/jedi-to-system';
 import { systemToJedi } from '../../src/transforms/system-to-jedi';
 import type { TransformMap } from '../../src/types/maps';
 import type { RawSegment } from '../../src/types/jedi';
+import { MapRegistry } from '../../src/maps/registry';
 
 const SAMPLE_204 = [
   'ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *231015*1200*U*00401*000000001*0*P*>',
@@ -62,14 +63,14 @@ const TEST_MAP_DETAIL_N1: TransformMap = {
   mappings: [
     { jediPath: 'heading.b2.b2_element_02', systemPath: 'standardCarrierAlphaCode' },
     { jediPath: 'heading.b2.b2_element_04', systemPath: 'order.standardOrderFields.shipperBillOfLadingNumber' },
-    { jediPath: 'detail.n1_loop.0.n1.n1_element_02', systemPath: 'shipperInformation.name' },
-    { jediPath: 'detail.n1_loop.0.l5.l5_element_02', systemPath: 'packages.0.description' },
-    { jediPath: 'detail.n1_loop.0.l5.l5_element_05', systemPath: 'packages.0.packageType' },
-    { jediPath: 'detail.n1_loop.0.at8.at8_element_03', systemPath: 'packages.0.weight', transform: 'toNumber' },
-    { jediPath: 'detail.n1_loop.0.at8.at8_element_04', systemPath: 'packages.0.quantity', transform: 'toNumber' },
-    { jediPath: 'detail.n1_loop.0.l4.l4_element_01', systemPath: 'packages.0.length', transform: 'toNumber' },
-    { jediPath: 'detail.n1_loop.0.l4.l4_element_02', systemPath: 'packages.0.width', transform: 'toNumber' },
-    { jediPath: 'detail.n1_loop.0.l4.l4_element_03', systemPath: 'packages.0.height', transform: 'toNumber' },
+    { jediPath: 'detail.s5_loop.0.n1_loop.0.n1.n1_element_02', systemPath: 'shipperInformation.name' },
+    { jediPath: 'detail.s5_loop.0.n1_loop.0.l5.l5_element_02', systemPath: 'packages.0.description' },
+    { jediPath: 'detail.s5_loop.0.n1_loop.0.l5.l5_element_05', systemPath: 'packages.0.packageType' },
+    { jediPath: 'detail.s5_loop.0.n1_loop.0.at8.at8_element_03', systemPath: 'packages.0.weight', transform: 'toNumber' },
+    { jediPath: 'detail.s5_loop.0.n1_loop.0.at8.at8_element_04', systemPath: 'packages.0.quantity', transform: 'toNumber' },
+    { jediPath: 'detail.s5_loop.0.n1_loop.0.l4.l4_element_01', systemPath: 'packages.0.length', transform: 'toNumber' },
+    { jediPath: 'detail.s5_loop.0.n1_loop.0.l4.l4_element_02', systemPath: 'packages.0.width', transform: 'toNumber' },
+    { jediPath: 'detail.s5_loop.0.n1_loop.0.l4.l4_element_03', systemPath: 'packages.0.height', transform: 'toNumber' },
   ],
 };
 
@@ -593,5 +594,51 @@ describe('Outbound Pipeline — 210 systemToJedi', () => {
     expect(tags.indexOf('B3')).toBeLessThan(tags.indexOf('C3'));
     expect(tags.indexOf('C3')).toBeLessThan(tags.indexOf('N9'));
     expect(tags.indexOf('N9')).toBeLessThan(tags.indexOf('L3'));
+  });
+});
+
+// ── Partner-specific map lookup ──────────────────────────────────────────────
+
+describe('Partner-specific map lookup', () => {
+  const registry = new MapRegistry();
+
+  beforeAll(() => {
+    // Publish default 204 inbound map
+    registry.publish({
+      id: 'seed-204-inbound',
+      transactionSet: '204',
+      direction: 'inbound',
+      dslSource: '# default 204',
+      mappings: [{ jediPath: 'heading.b2.b2_element_02', systemPath: 'standardCarrierAlphaCode' }],
+    });
+
+    // Publish CEVAPD partner-specific 204 inbound map
+    registry.publish({
+      id: 'cevapd-204-inbound',
+      transactionSet: '204',
+      direction: 'inbound',
+      dslSource: '# cevapd 204',
+      mappings: [{ jediPath: 'detail.s5_loop.0.n1_loop.0.n1.n1_element_02', systemPath: 'shipperInformation.name' }],
+    });
+  });
+
+  test('getForPartner returns cevapd-204-inbound map for CEVAPD', () => {
+    const map = registry.getForPartner('204', 'inbound', 'CEVAPD');
+    expect(map.id).toBe('cevapd-204-inbound');
+  });
+
+  test('getForPartner returns default 204 map for EFWW', () => {
+    const map = registry.getForPartner('204', 'inbound', 'EFWW');
+    expect(map.id).toBe('seed-204-inbound');
+  });
+
+  test('getForPartner falls back to default when partnerId is empty', () => {
+    const map = registry.getForPartner('204', 'inbound', '');
+    expect(map.id).toBe('seed-204-inbound');
+  });
+
+  test('getForPartner falls back to default for UNKNOWN partner', () => {
+    const map = registry.getForPartner('204', 'inbound', 'UNKNOWN');
+    expect(map.id).toBe('seed-204-inbound');
   });
 });

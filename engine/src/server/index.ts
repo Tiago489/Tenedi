@@ -21,6 +21,7 @@ import '../maps/seeds/211.map';
 import '../maps/seeds/214.map';
 import '../maps/seeds/990.map';
 import '../maps/seeds/997.map';
+import '../maps/seeds/cevapd-204.map';
 
 const logger = pino({ name: 'server' });
 const OPS_URL = process.env.OPS_PLATFORM_URL ?? 'http://localhost:8000';

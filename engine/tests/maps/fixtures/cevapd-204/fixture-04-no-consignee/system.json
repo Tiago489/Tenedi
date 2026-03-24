@@ -1,0 +1,32 @@
+{
+  "senderId": "CEVAPD",
+  "receiverId": "PALLET",
+  "applicationSenderCode": "CEVAPD",
+  "receiverSenderCode": "PALLET",
+  "usageIndicatorCode": "P",
+  "transactionSetIdentifierCode": "204",
+  "transactionSetPurposeCode": "ORIGINAL",
+  "senderContactCode": "FBTC",
+  "standardCarrierAlphaCode": "FBTC",
+  "order": {
+    "mawb": "AZN3167984",
+    "isLineHaul": false,
+    "secondaryRefNumber": "192032687",
+    "tertiaryRefNumber": "587972344",
+    "quinaryRefNumber": "BOS0848",
+    "paymentMethod": "PREPAID_BY_SELLER",
+    "pickupOrDelivery": "PICKUP_AND_DELIVERY",
+    "endStop": {},
+    "deadlineDate": "2026-03-23",
+    "standardOrderFields": {
+      "shipperBillOfLadingNumber": "61467953"
+    }
+  },
+  "packages": [
+    {
+      "weight": 5,
+      "quantity": 1,
+      "packageType": "PCS"
+    }
+  ]
+}

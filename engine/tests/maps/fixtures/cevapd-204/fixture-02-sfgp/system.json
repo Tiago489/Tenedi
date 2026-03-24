@@ -1,0 +1,44 @@
+{
+  "senderId": "CEVAPDT",
+  "receiverId": "PALLET",
+  "applicationSenderCode": "CEVAPDT",
+  "receiverSenderCode": "PALLET",
+  "usageIndicatorCode": "P",
+  "transactionSetIdentifierCode": "204",
+  "transactionSetPurposeCode": "ORIGINAL",
+  "senderContactCode": "SFGP",
+  "standardCarrierAlphaCode": "SFGP",
+  "order": {
+    "mawb": "59369758",
+    "isLineHaul": false,
+    "secondaryRefNumber": "160674007",
+    "tertiaryRefNumber": "513448858",
+    "quaternaryRefNumber": "513448859",
+    "quinaryRefNumber": "RNO0144",
+    "paymentMethod": "PREPAID_BY_SELLER",
+    "pickupOrDelivery": "PICKUP_AND_DELIVERY",
+    "endStop": {},
+    "deadlineDate": "2025-03-05",
+    "standardOrderFields": {
+      "shipperBillOfLadingNumber": "MDA7804682"
+    }
+  },
+  "consigneeInformation": {
+    "name": "TIFFANY MARTIN",
+    "addressLine1": "133 SOUTH MESA STREET",
+    "city": "SUSANVILLE",
+    "state": "CA",
+    "zip": "96130",
+    "country": "USA",
+    "contactName": "N/A",
+    "contactPhone": "5302601791",
+    "deadlineDate": "2025-03-05"
+  },
+  "packages": [
+    {
+      "weight": 317,
+      "quantity": 3,
+      "packageType": "PCS"
+    }
+  ]
+}

@@ -187,10 +187,13 @@ describe('EDI Parser', () => {
     const heading = tx.heading as Record<string, unknown>;
 
     expect(detail).toBeDefined();
-    expect(detail['n1_loop']).toBeDefined();
+    // With nested loop support, N1 nests inside the S5 loop entry
+    const s5Loop = detail['s5_loop'] as Record<string, unknown>[];
+    expect(s5Loop).toBeDefined();
+    expect(s5Loop[0]['n1_loop']).toBeDefined();
     expect(heading['n1_loop']).toBeUndefined();
 
-    const n1Loop = detail['n1_loop'] as Record<string, unknown>[];
+    const n1Loop = s5Loop[0]['n1_loop'] as Record<string, unknown>[];
     expect(n1Loop[0]).toHaveProperty('n1');
     expect(n1Loop[0]).toHaveProperty('n3');
     expect(n1Loop[0]).toHaveProperty('n4');

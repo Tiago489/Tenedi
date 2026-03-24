@@ -1,0 +1,9 @@
+{
+  "client": "client-a",
+  "fieldMappings": {
+    "shipperBillOfLadingNumber": "order.standardOrderFields.shipperBillOfLadingNumber"
+  },
+  "expected": {
+    "shipperBillOfLadingNumber": "61467953"
+  }
+}
