@@ -1,0 +1,51 @@
+{% extends "admin/partners/wizard/base.html" %}
+
+{% block step_title %}<i class="fas fa-exchange-alt mr-2"></i>Upload Stedi Mapping{% endblock %}
+
+{% block step_content %}
+<form method="post" enctype="multipart/form-data" id="wizard-form">
+  {% csrf_token %}
+  {% for field in form %}
+  <div class="form-group row mb-3">
+    <label for="{{ field.id_for_label }}" class="col-sm-3 col-form-label">{{ field.label }}</label>
+    <div class="col-sm-9">
+      {{ field }}
+      {% if field.help_text %}<small class="text-muted d-block">{{ field.help_text }}</small>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</form>
+
+{% if maps %}
+<hr>
+<h6>Existing Mappings</h6>
+<table class="table table-sm">
+  <thead><tr><th>Transaction Set</th><th>Direction</th><th>Type</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for m in maps %}
+    <tr>
+      <td>{{ m.transaction_set }}</td>
+      <td>{{ m.direction }}</td>
+      <td>{{ m.map_type }}</td>
+      <td>{% if m.is_live %}<span class="badge badge-success">Live</span>{% else %}<span class="badge badge-secondary">Draft</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<div id="convert-preview" class="mt-3" style="display:none">
+  <div class="alert" id="convert-alert"></div>
+  <details>
+    <summary>Generated DSL Preview</summary>
+    <pre id="convert-dsl" class="mt-2 p-2 bg-dark text-light" style="max-height:300px;overflow:auto;font-size:0.8rem"></pre>
+  </details>
+</div>
+{% endblock %}
+
+{% block step_actions %}
+<a href="{% url 'wizard_step' 5 %}" class="btn btn-outline-secondary mr-2">Skip this step</a>
+<button type="submit" form="wizard-form" class="btn btn-primary">
+  Next <i class="fas fa-arrow-right ml-1"></i>
+</button>
+{% endblock %}

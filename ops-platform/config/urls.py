@@ -8,6 +8,7 @@ admin.site.site_title = 'Tenet EDI'
 admin.site.index_title = 'Operations Platform'
 
 urlpatterns = [
+    path('admin/partners/wizard/', include('apps.partners.urls_wizard')),
     path('admin/', admin.site.urls),
     path('api/dashboard/metrics/', DashboardMetricsView.as_view()),
     path('api/maps/', include('apps.maps.urls')),

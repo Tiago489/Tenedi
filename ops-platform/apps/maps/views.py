@@ -137,6 +137,22 @@ class MapSyncView(APIView):
         })
 
 
+class PublishedMapsView(APIView):
+    """GET /api/maps/published/ — return all live maps for engine to load on startup."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        maps = TransformMap.objects.filter(is_live=True).select_related('partner')
+        return Response([{
+            'partner_key': m.partner.partner_id.lower() if m.partner else None,
+            'transaction_set': m.transaction_set,
+            'direction': m.direction,
+            'dsl_source': m.dsl_source or '',
+            'custom_transform_id': m.custom_transform_id or '',
+            'version': m.version,
+        } for m in maps])
+
+
 class ConvertStediView(APIView):
     """POST /api/maps/convert-stedi/ — convert Stedi mapping.json to DSL."""
     permission_classes = [AllowAny]

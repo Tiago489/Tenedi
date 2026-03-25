@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import pino from 'pino';
 import { mapRegistry } from '../../maps/registry';
 import { compiler } from '../../dsl/keywords/index';
+import { customTransforms } from '../../maps/transforms/index';
 import type { FieldMapping } from '../../types/maps';
 
 const logger = pino({ name: 'route:maps' });
@@ -62,6 +63,49 @@ export async function mapsRoutes(fastify: FastifyInstance): Promise<void> {
     } catch (err: unknown) {
       return reply.code(400).send({ error: (err as Error).message });
     }
+  });
+
+  // POST /maps/reload — hot-reload a single map from Django (triggered by post_save signal)
+  fastify.post('/reload', async (req, reply) => {
+    const { partner_key, transaction_set, direction, dsl_source, custom_transform_id, version } = req.body as {
+      partner_key: string | null;
+      transaction_set: string;
+      direction: 'inbound' | 'outbound';
+      dsl_source: string;
+      custom_transform_id: string;
+      version: number;
+    };
+
+    if (!transaction_set || !direction) {
+      return reply.code(400).send({ error: 'transaction_set and direction are required' });
+    }
+
+    const mapId = partner_key
+      ? `${partner_key}-${transaction_set}-${direction}`
+      : `django-${transaction_set}-${direction}`;
+
+    // If custom transform, verify it exists in the engine code
+    if (custom_transform_id) {
+      if (!customTransforms[custom_transform_id]) {
+        logger.warn({ custom_transform_id }, 'Custom transform not found in engine — map registered without transform');
+      }
+    }
+
+    const map = mapRegistry.publish({
+      id: mapId,
+      transactionSet: transaction_set,
+      direction,
+      mappings: [],
+      dslSource: dsl_source || undefined,
+      customTransformId: custom_transform_id || undefined,
+    });
+
+    const storeKey = partner_key
+      ? `${partner_key}-${transaction_set}:${direction}`
+      : `${transaction_set}:${direction}`;
+
+    logger.info({ storeKey, version: map.version, custom_transform_id }, 'Map reloaded via Django signal');
+    return reply.send({ success: true, storeKey, version: map.version });
   });
 
   // POST /maps/compile — compile DSL + validate against sample JEDI fixture

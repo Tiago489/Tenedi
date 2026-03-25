@@ -100,6 +100,14 @@ JAZZMIN_SETTINGS = {
         {"name": "Engine Health", "url": "http://localhost:3000/health",
          "new_window": True},
     ],
+    "custom_links": {
+        "partners": [{
+            "name": "Setup Wizard",
+            "url": "/admin/partners/wizard/",
+            "icon": "fas fa-magic",
+            "new_window": False,
+        }],
+    },
     "usermenu_links": [],
     "show_sidebar": True,
     "navigation_expanded": True,

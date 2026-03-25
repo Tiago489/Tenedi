@@ -71,6 +71,63 @@ async function syncMapsToOps(): Promise<void> {
   }
 }
 
+async function loadDynamicMapsFromOps(): Promise<void> {
+  try {
+    const res = await axios.get<Array<{
+      partner_key: string | null;
+      transaction_set: string;
+      direction: string;
+      dsl_source: string;
+      custom_transform_id: string;
+      version: number;
+    }>>(`${OPS_URL}/api/maps/published/`, { timeout: 5_000 });
+
+    let loaded = 0;
+    for (const entry of res.data) {
+      if (!entry.transaction_set || !entry.direction) continue;
+      if (!entry.dsl_source && !entry.custom_transform_id) continue;
+
+      const mapId = entry.partner_key
+        ? `${entry.partner_key}-${entry.transaction_set}-${entry.direction}`
+        : `django-${entry.transaction_set}-${entry.direction}`;
+
+      // Skip if a seed map already covers this key
+      const storeKey = entry.partner_key
+        ? `${entry.partner_key}-${entry.transaction_set}:${entry.direction}`
+        : `${entry.transaction_set}:${entry.direction}`;
+
+      try {
+        mapRegistry.get(entry.transaction_set, entry.direction as 'inbound' | 'outbound');
+        // If we got here without error, a default map exists. Only skip if it's
+        // not a partner-specific map — partner maps use getForPartner which checks
+        // a different key. We check the registryDump for exact key collision.
+        const dump = mapRegistry.registryDump();
+        if (dump.some(d => d.storeKey === storeKey)) {
+          continue; // already registered by seed
+        }
+      } catch {
+        // No existing map — safe to register
+      }
+
+      mapRegistry.publish({
+        id: mapId,
+        transactionSet: entry.transaction_set,
+        direction: entry.direction as 'inbound' | 'outbound',
+        mappings: [],
+        dslSource: entry.dsl_source || undefined,
+        customTransformId: entry.custom_transform_id || undefined,
+      });
+      loaded++;
+    }
+
+    if (loaded > 0) {
+      logger.info({ loaded }, 'Dynamic maps loaded from ops platform');
+    }
+  } catch (err: unknown) {
+    logger.warn({ err: (err as Error).message }, 'Could not load dynamic maps from ops platform — continuing');
+  }
+}
+
 async function main() {
   mapRegistry.loadFromDisk();
 
@@ -78,8 +135,9 @@ async function main() {
   await app.listen({ host: config.server.host, port: config.server.port });
   logger.info({ port: config.server.port }, 'EDI transform engine started');
 
-  // Sync map registry to Django so Admin shows all maps
+  // Sync seed maps to Django, then load any dynamic maps from Django
   await syncMapsToOps();
+  await loadDynamicMapsFromOps();
 
   const partnerPollers: SFTPPoller[] = [];
 

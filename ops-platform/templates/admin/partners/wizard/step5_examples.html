@@ -1,0 +1,55 @@
+{% extends "admin/partners/wizard/base.html" %}
+
+{% block step_title %}<i class="fas fa-file-alt mr-2"></i>Upload Examples{% endblock %}
+
+{% block step_content %}
+<form method="post" enctype="multipart/form-data" id="wizard-form">
+  {% csrf_token %}
+  <div class="row">
+    <div class="col-md-4">
+      <div class="form-group">
+        <label>EDI file (.edi)</label>
+        <input type="file" name="edi_file" class="form-control-file" accept=".edi,.txt">
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="form-group">
+        <label>Target JSON (.json)</label>
+        <input type="file" name="target_file" class="form-control-file" accept=".json">
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="form-group">
+        <label>Label (optional)</label>
+        <input type="text" name="example_label" class="form-control" placeholder="e.g. fixture-01-fbtc">
+      </div>
+    </div>
+  </div>
+  <small class="text-muted">Upload an EDI file and its expected systemJson output. This pair is used for AI-assisted map generation and validation.</small>
+</form>
+
+{% if examples %}
+<hr>
+<h6>Uploaded Examples ({{ examples.count }})</h6>
+<table class="table table-sm">
+  <thead><tr><th>Label</th><th>TX Set</th><th>Validated</th><th>Created</th></tr></thead>
+  <tbody>
+    {% for ex in examples %}
+    <tr>
+      <td>{{ ex.auto_label|default:ex.example_label|default:ex.content_hash|truncatechars:12 }}</td>
+      <td>{{ ex.transaction_set }}</td>
+      <td>{% if ex.is_validated %}<i class="fas fa-check text-success"></i>{% else %}<i class="fas fa-minus text-muted"></i>{% endif %}</td>
+      <td>{{ ex.created_at|date:"M d, H:i" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
+
+{% block step_actions %}
+<a href="{% url 'wizard_step' 6 %}" class="btn btn-outline-secondary mr-2">Skip this step</a>
+<button type="submit" form="wizard-form" class="btn btn-primary">
+  Upload &amp; Continue <i class="fas fa-arrow-right ml-1"></i>
+</button>
+{% endblock %}

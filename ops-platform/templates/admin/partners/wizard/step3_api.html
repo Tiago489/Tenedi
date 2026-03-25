@@ -1,0 +1,32 @@
+{% extends "admin/partners/wizard/base.html" %}
+
+{% block step_title %}<i class="fas fa-cloud mr-2"></i>Downstream API{% endblock %}
+
+{% block step_content %}
+<form method="post" id="wizard-form">
+  {% csrf_token %}
+  {% for field in form %}
+  <div class="form-group row mb-3">
+    <label for="{{ field.id_for_label }}" class="col-sm-3 col-form-label">{{ field.label }}</label>
+    <div class="col-sm-9">
+      {{ field }}
+      {% if field.errors %}
+        {% for error in field.errors %}<small class="text-danger d-block">{{ error }}</small>{% endfor %}
+      {% endif %}
+      {% if field.help_text %}<small class="text-muted d-block">{{ field.help_text }}</small>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  <div class="alert alert-secondary mt-3">
+    <i class="fas fa-info-circle mr-1"></i>
+    After setup, every processed EDI file's systemJson will be POSTed to this URL
+    with the API key as a Bearer token.
+  </div>
+</form>
+{% endblock %}
+
+{% block step_actions %}
+<button type="submit" form="wizard-form" class="btn btn-primary">
+  Next <i class="fas fa-arrow-right ml-1"></i>
+</button>
+{% endblock %}

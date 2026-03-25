@@ -1,0 +1,75 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}{{ title }} | {{ site_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:partners_tradingpartner_changelist' %}">Partners</a>
+  &rsaquo; Setup Wizard
+</div>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .wizard-progress { display: flex; justify-content: center; align-items: center; padding: 1.5rem 0; margin-bottom: 1.5rem; }
+  .wizard-step { display: flex; align-items: center; text-decoration: none; color: inherit; }
+  .wizard-step .step-circle {
+    width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0;
+    border: 2px solid #6c757d; color: #6c757d; background: transparent;
+  }
+  .wizard-step.completed .step-circle { background: #28a745; border-color: #28a745; color: #fff; }
+  .wizard-step.current .step-circle { background: #007bff; border-color: #007bff; color: #fff; transform: scale(1.15); }
+  .wizard-step .step-label { margin-left: 0.4rem; font-size: 0.8rem; white-space: nowrap; }
+  .wizard-step.current .step-label { font-weight: 700; color: #007bff; }
+  .wizard-step.completed .step-label { color: #28a745; }
+  .wizard-connector { width: 40px; height: 2px; background: #6c757d; margin: 0 0.25rem; flex-shrink: 0; }
+  .wizard-connector.done { background: #28a745; }
+  .wizard-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); }
+  .wizard-footer .step-info { color: #6c757d; font-size: 0.85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Progress Bar -->
+<div class="wizard-progress">
+  {% for step in steps %}
+    {% if not forloop.first %}
+      <div class="wizard-connector {% if step.num <= current_step %}done{% endif %}"></div>
+    {% endif %}
+    <a href="{% if step.num < current_step and partner %}{% url 'wizard_step' step.num %}{% else %}#{% endif %}"
+       class="wizard-step {% if step.num < current_step %}completed{% elif step.num == current_step %}current{% endif %}">
+      <span class="step-circle">
+        {% if step.num < current_step %}<i class="fas fa-check"></i>{% else %}{{ step.num }}{% endif %}
+      </span>
+      <span class="step-label d-none d-md-inline">{{ step.label }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+<!-- Step Content -->
+<div class="card">
+  <div class="card-header">
+    <h5 class="mb-0"><i class="fas {{ steps|default_if_none:"" }} mr-2"></i>{% block step_title %}{% endblock %}</h5>
+  </div>
+  <div class="card-body">
+    {% block step_content %}{% endblock %}
+  </div>
+</div>
+
+<!-- Footer Navigation -->
+<div class="wizard-footer">
+  <div>
+    {% if current_step > 1 %}
+      <a href="{% url 'wizard_step' current_step|add:'-1' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left mr-1"></i> Back
+      </a>
+    {% endif %}
+  </div>
+  <span class="step-info">Step {{ current_step }} of 6</span>
+  <div>{% block step_actions %}{% endblock %}</div>
+</div>
+{% endblock %}
