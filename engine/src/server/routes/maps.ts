@@ -80,9 +80,10 @@ export async function mapsRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: 'transaction_set and direction are required' });
     }
 
+    // Use "seed-" prefix for default maps so partnerKeyFromId treats them as default store key
     const mapId = partner_key
       ? `${partner_key}-${transaction_set}-${direction}`
-      : `django-${transaction_set}-${direction}`;
+      : `seed-${transaction_set}-${direction}`;
 
     // If custom transform, verify it exists in the engine code
     if (custom_transform_id) {

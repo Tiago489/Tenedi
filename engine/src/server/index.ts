@@ -89,7 +89,7 @@ async function loadDynamicMapsFromOps(): Promise<void> {
 
       const mapId = entry.partner_key
         ? `${entry.partner_key}-${entry.transaction_set}-${entry.direction}`
-        : `django-${entry.transaction_set}-${entry.direction}`;
+        : `seed-${entry.transaction_set}-${entry.direction}`;
 
       // Skip if a seed map already covers this key
       const storeKey = entry.partner_key

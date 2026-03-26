@@ -119,7 +119,8 @@ class WizardStepView(View):
         if step == 2:
             form = self._get_transport_form(partner, request.POST)
             if form.is_valid():
-                form.save()
+                if hasattr(form, 'save'):
+                    form.save()
                 return redirect('wizard_step', step=3)
             return render(request, 'admin/partners/wizard/step2_transport.html', _ctx(request, 2, partner, form=form))
 

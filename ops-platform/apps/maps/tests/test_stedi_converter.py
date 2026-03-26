@@ -115,13 +115,19 @@ class TestStandardFieldsInjection(TestCase):
             self.assertIn(field, result.dsl, f'Standard field {field} missing from DSL')
         self.assertEqual(result.fields_standard, 10)
 
-    def test_standard_fields_not_injected_for_non_204(self):
+    def test_envelope_fields_injected_for_211_inbound(self):
+        """211 inbound should get the 5 envelope fields but NOT the 204-specific heading fields."""
         mapping = json.dumps({
             'name': 'Empty', 'type': 'only_mapped_keys',
             'mapping': '{}', 'lookup_tables': [],
         })
         result = convert(mapping, '211', 'inbound')
-        self.assertEqual(result.fields_standard, 0)
+        self.assertEqual(result.fields_standard, 5)
+        self.assertIn('senderId', result.dsl)
+        self.assertIn('receiverId', result.dsl)
+        self.assertIn('usageIndicatorCode', result.dsl)
+        self.assertNotIn('paymentMethod', result.dsl)
+        self.assertNotIn('pickupOrDelivery', result.dsl)
 
 
 class TestNoDuplicateStandardFields(TestCase):

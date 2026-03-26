@@ -22,7 +22,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'django_celery_results',
     'apps.users',
     'apps.partners',
     'apps.maps',
@@ -129,6 +128,8 @@ JAZZMIN_SETTINGS = {
     "use_google_fonts_cdn": True,
     "show_ui_builder": False,
     "changeform_format": "horizontal_tabs",
+    "order_with_respect_to": ["partners", "jobs", "maps", "auth"],
+    "hide_apps": ["django_celery_results"],
     "language_chooser": False,
 }
 
